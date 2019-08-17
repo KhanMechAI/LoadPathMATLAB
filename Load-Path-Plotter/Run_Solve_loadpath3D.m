@@ -6,11 +6,11 @@ tic
 % Closes previously opened waitbars
     F = findall(0,'type','figure','tag','TMWWaitbar');
     delete(F);
-
+    DATA_DIMENSION = 4; %X, Y, Z and Intensity information. Can be amended later if more data is needed to be gathered. This sets the preallocated memory size.
     % Read's seed data in
     Seed = importdata(seedDirectory, ',');
-    [numSeeds, ~] = size(Seed);
-    if numSeeds > 0
+    [nPaths, ~] = size(Seed);
+    if nPaths > 0
         xSeed = Seed(:,1);
         ySeed = Seed(:,2);
         zSeed = Seed(:,3);
@@ -33,8 +33,8 @@ tic
     %% Naming output files and killing interfering processes
     modelName = [modelName, ' - ',upper(pathDirectory), ' Path'];
     modelDataName = regexprep(modelName, ' ', '_');
-
     pathSeparator = '/';
+    matFileName = strjoin([saveDirectory pathSeparator 'Path Data' pathSeparator 'pathdata_' modelDataName '.mat'],'');
     if ispc
         pathSeparator = '\';
         system(strjoin(['taskkill /fi "WINDOWTITLE eq ', modelName,'.pdf"'],''));
@@ -84,9 +84,9 @@ tic
         numParts = 1;
         [irow,numel] = size(PartArr(numParts).elements);
 
-        %% ******************  If numSeeds == 0 Define Seeds based on maximum pointing vector **************************
+        %% ******************  If nPaths == 0 Define Seeds based on maximum pointing vector **************************
         %% ******************  Defines seeds at peak of pulse for transient solution          **************************
-        if numSeeds == 0
+        if nPaths == 0
             %Set up list of element pointing vectors
             %Determine x-coordinate for maximum magnitude of pointing vector 
             %to define peak of pulse. Set seeds on all elements with XCG
@@ -130,7 +130,7 @@ tic
                     zSeed(nSeeds) = CGXYZ(3,k);
                 end
             end
-            numSeeds = nSeeds;
+            nPaths = nSeeds;
         end
     else
         %This loads data if the preprocessign has already been done.
@@ -152,24 +152,36 @@ tic
 
     %% ****************  Load Path Generation  ******************************
     %Initialise data containers for load paths
+    
+    pathData = zeros(2*pathLength, nPaths, DATA_DIMENSION, 'single')
+    save(matFileName, 'pathData');
+    matPathData = matfile(matFileName, 'Writable', true)
 
-    Paths(numSeeds).X.forward = [];
-    Paths(numSeeds).Y.forward = [];
-    Paths(numSeeds).Z.forward = [];
-    Paths(numSeeds).I.forward = [];
-    Paths(numSeeds).X.total = [];
-    Paths(numSeeds).Y.total = [];
-    Paths(numSeeds).Z.total = [];
-    Paths(numSeeds).I.total = [];
+    Paths(nPaths).X.forward = [];
+    Paths(nPaths).Y.forward = [];
+    Paths(nPaths).Z.forward = [];
+    Paths(nPaths).I.forward = [];
+    Paths(nPaths).X.total = [];
+    Paths(nPaths).Y.total = [];
+    Paths(nPaths).Z.total = [];
+    Paths(nPaths).I.total = [];
 
     switch parallel
         %Parallel computation if load paths
         case 1
-            workers = 4;
-                % Currently 2D and 3D are separate, very crude. Future
-                % update is to pass as vector and scale all functions
-                % according to the length of that vector.
-                parfor (i = 1:numSeeds, workers)
+            myCluster = parcluster('local');
+            nWorkers = myCluster.NumWorkers;
+            nPathsPerWorker = ceil(nPaths/nWorkers);
+            % spmd
+            %     myFname = tempname(); % each worker gets a unique filename
+            %     myMatFile = matfile(myFname, 'Writable', true);
+            %     myMatFile.pathData = zeros(2*pathLength, nPathsPerWorker, DATA_DIMENSION, 'single')
+            %     myMatFile.pathIndex = int8(0)
+            % end
+
+            % myMatfileConstant = parallel.pool.Constant(myMatFile);
+            %2D removed, pending future re-integration. Need to separate parallel and single core processing to functions to clean main program.
+                parfor (i = 1:nPaths, nWorkers)
                     fprintf('Starting path %i\n',i)
                     warning('off','MATLAB:scatteredInterpolant:DupPtsAvValuesWarnId');
                     %Main work horse module - Runge Kutta
@@ -181,12 +193,16 @@ tic
                         fprintf('Path %i unsuccessful\n',i)
                         continue
                     end
-                    reverse_path = true;
+                    % matFileObj = myMatfileConstant.Value;
+                    iPathMatFileName = string(i) + tempname(); % each worker gets a unique filename
+                    iPathMatFile = matfile(iPathMatFileName, 'Writable', true);
+                    iPathMatFile.pathData = [x; y; z; intense]'
+                    
                     Paths(i).X.forward = x;
                     Paths(i).Y.forward = y;
                     Paths(i).Z.forward = z;
                     Paths(i).I.forward = intense;
-
+                    reverse_path = true;
                      [x, y, z, intense ] = RunLibrary_rungekuttaNatInter3D(...
                         xSeed(i),ySeed(i),zSeed(i), PartArr, pathDirectory,...
                         pathLength,reverse_path,stepSize, waitBar);
@@ -200,13 +216,13 @@ tic
                 CURRENT_TIME = CURRENT_TIME +80;
     	  % ******************   Single thread processing
         case 0
-            for i = 1:numSeeds
+            for i = 1:nPaths
                 %fprintf('Starting path %i\n',i)
                 if getappdata(waitBar,'canceling')
                     delete(waitBar)
                     return
                 end
-                waitbar(CURRENT_TIME/totalTime,waitBar,sprintf('Seed %i of %i Computing', i, numSeeds))
+                waitbar(CURRENT_TIME/totalTime,waitBar,sprintf('Seed %i of %i Computing', i, nPaths))
                 warning('off','MATLAB:scatteredInterpolant:DupPtsAvValuesWarnId');
                 reverse_path = false;
                 [dkx, dky, dkz, dkintense] = RunLibrary_rungekuttaNatInter3D(...
@@ -254,7 +270,7 @@ tic
                 Paths(i).Y.forward = y;
                 Paths(i).Z.forward = z;
                 Paths(i).I.forward = intense;
-                CURRENT_TIME = CURRENT_TIME + 1/numSeeds *80/2;
+                CURRENT_TIME = CURRENT_TIME + 1/nPaths *80/2;
                 reverse_path = true;
                 [dkx, dky, dkz, dkintense ] = RunLibrary_rungekuttaNatInter3D(...
                     xSeed(i), ySeed(i), zSeed(i), PartArr, pathDirectory,...
@@ -300,7 +316,7 @@ tic
                 Paths(i).Y.total = [fliplr(y), Paths(i).Y.forward];
                 Paths(i).Z.total = [fliplr(z), Paths(i).Z.forward];
                 Paths(i).I.total = [fliplr(intense), Paths(i).I.forward];
-                CURRENT_TIME = CURRENT_TIME + 1/numSeeds *80/2;
+                CURRENT_TIME = CURRENT_TIME + 1/nPaths *80/2;
                 fprintf('Path %i done\n',i)
             end
     end
