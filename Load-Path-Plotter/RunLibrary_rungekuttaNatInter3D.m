@@ -99,10 +99,16 @@ function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(.
         %To keep plot inside domain
         nancols = nancols-1;
     end
-    x_path = p(1,nancols);
-    y_path = p(2,nancols);
-    z_path = p(3,nancols);
-    intensity = intensity(nancols);
+    x_path = p(1,:);
+    y_path = p(2,:);
+    z_path = p(3,:);
+    intensity = intensity(:)';
+    if ReversePath
+        x_path = fliplr(x_path);
+        y_path = fliplr(y_path);
+        z_path = fliplr(z_path);
+        intensity = fliplr(intensity);
+    end
 
     function [d_point] = stress_interp(p)
         stress = F(p(1), p(2), p(3));

@@ -164,6 +164,15 @@ tic
     %% ****************  Load Path Generation  ******************************
     %Initialise data containers for load paths
 
+    Paths(nPaths).X.forward = [];
+    Paths(nPaths).Y.forward = [];
+    Paths(nPaths).Z.forward = [];
+    Paths(nPaths).I.forward = [];
+    Paths(nPaths).X.total = [];
+    Paths(nPaths).Y.total = [];
+    Paths(nPaths).Z.total = [];
+    Paths(nPaths).I.total = [];
+
     switch parallel
         %Parallel computation if load paths
         case 1
@@ -196,10 +205,18 @@ tic
                         continue
                     end
                     iPathMatFile.pathData(1:pathLength,:) = [x; y; z; intense]';
+                    Paths(k).X.forward = x;
+                    Paths(k).Y.forward = y;
+                    Paths(k).Z.forward = z;
+                    Paths(k).I.forward = intense;
                     reverse_path = true;
                      [x, y, z, intense ] = RunLibrary_rungekuttaNatInter3D(...
                         xSeed(k),ySeed(k),zSeed(k), PartArr, pathDirectory,...
                         pathLength,reverse_path,stepSize, waitBar);
+                    Paths(k).X.total = [fliplr(x), Paths(k).X.forward];
+                    Paths(k).Y.total = [fliplr(y), Paths(k).Y.forward];
+                    Paths(k).Z.total = [fliplr(z), Paths(k).Z.forward];
+                    Paths(k).I.total = [fliplr(intense), Paths(k).I.forward];
                     [mdk,ndk] = size(intense);
                     iPathMatFile.pathData(pathLength+1:2*pathLength,:) = [dkx; dky; dkz; dkintense]';
                     fprintf('Path %k done\n',k);
@@ -262,7 +279,10 @@ tic
                     intense = dkintense;
                 end
 
-                
+                Paths(k).X.forward = x;
+                Paths(k).Y.forward = y;
+                Paths(k).Z.forward = z;
+                Paths(k).I.forward = intense;
                 CURRENT_TIME = CURRENT_TIME + 1/nPaths *80/2;
                 reverse_path = true;
                 [dkx, dky, dkz, dkintense ] = RunLibrary_rungekuttaNatInter3D(...
@@ -306,7 +326,10 @@ tic
                     intense = dkintense;
                     [mdk,ndk] = size(intense);
                 end
-                
+                Paths(k).X.total = [x, Paths(k).X.forward];
+                Paths(k).Y.total = [y, Paths(k).Y.forward];
+                Paths(k).Z.total = [z, Paths(k).Z.forward];
+                Paths(k).I.total = [intense, Paths(k).I.forward];
                 CURRENT_TIME = CURRENT_TIME + 1/nPaths *80/2;
                 fprintf('Path %k done\n',k)
             end
@@ -346,7 +369,7 @@ tic
     %data sets may have to be condensed. And that its a good backup of the
     %path calculation.
 
-    % save(strjoin([saveDirectory pathSeparator 'Path Data' pathSeparator 'pathdata_' modelDataName '.mat'],''), 'Paths');
+    save(strjoin([saveDirectory pathSeparator 'Path Data' pathSeparator 'pathdata_' modelDataName '.mat'],''), 'Paths');
     fig = figure;
     fprintf('Plotting Paths\n')
 
@@ -396,8 +419,8 @@ function [] = modelPlot3D(pathDataMatObject,PartArr,...
     RunPlot_wireFrame(PartArr,ALPHA, BUFFER,nodes);
     numPaths = size(pathDataMatObject.pathData(1,:,1));
     numPaths = numPaths(2);
-    nPathLength = size(pathDataMatObject.pathData(:,1,1));
-    nPathLength = nPathLength(1);
+    pathLength = size(pathDataMatObject.pathData(:,1,1));
+    pathLength = pathLength(1);
     maxInt = max(max(pathDataMatObject.pathData(:,:,4)));
     minInt = min(min(pathDataMatObject.pathData(:,:,4)));
     if isempty(maxInt)
@@ -406,14 +429,12 @@ function [] = modelPlot3D(pathDataMatObject,PartArr,...
     end
     for k = 1:numPaths
         iPath = pathDataMatObject.pathData(:,k,:);
-        iPath = reshape(iPath,nPathLength, 4)';
-        nanColumns = isnan(iPath(1,:));
-        if all(nanColumns)
+        iPath = reshape(iPath,pathLength, 4)';
+        nanColums = isnan(iPath(:,1));
+        if all(isnan(iPath(:,1)))
             fprintf('Path %k unsuccessful', k)
             continue
         end
-        iPath = iPath(:,~nanColumns)
-        iPathLength = length(iPath(1,:))
         cd = colormap('parula');
         %%*********************************If transient solution hardwire maximum ***********
         %%*********************************Should be same for all plots in sequence *********
@@ -439,9 +460,9 @@ function [] = modelPlot3D(pathDataMatObject,PartArr,...
         %finish
         cd = interp1(linspace(minInt,maxInt,length(cd)),cd,iPath(4,:));
         cd = uint8(cd*255);
-        cd(:,4) = ones(1,iPathLength)*255;
+        cd(:,4) = ones(1,pathLength)*255;
         cd = cd';
-        paths = line(iPath(1,:), iPath(2,:), iPath(3,:));
+        paths = line(iPath(1, :)', iPath(2, :)', iPath(3, :)');
         drawnow;
         set(paths.Edge,'ColorBinding','interpolated', 'ColorData',cd)
     end
