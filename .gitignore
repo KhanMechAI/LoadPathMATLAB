@@ -16,3 +16,14 @@ Define_Waitbar.m
 *.DS_Store
 *.mat
 
+_conflict_copy_GIS010495_2019_08_19.gitignore
+.git-old/hooks/prepare-commit-msg_conflict_copy_GIS010495_2019_08_19.sample
+.git-old/hooks/pre-receive_conflict_copy_GIS010495_2019_08_19.sample
+.git-old/hooks/pre-rebase_conflict_copy_GIS010495_2019_08_19.sample
+.git-old/hooks/pre-push_conflict_copy_GIS010495_2019_08_19.sample
+.git-old/hooks/pre-commit_conflict_copy_GIS010495_2019_08_19.sample
+.git-old/hooks/pre-applypatch_conflict_copy_GIS010495_2019_08_19.sample
+.git-old/hooks/post-update_conflict_copy_GIS010495_2019_08_19.sample
+.git-old/hooks/fsmonitor-watchman_conflict_copy_GIS010495_2019_08_19.sample
+.git-old/hooks/commit-msg_conflict_copy_GIS010495_2019_08_19.sample
+.git-old/hooks/applypatch-msg_conflict_copy_GIS010495_2019_08_19.sample

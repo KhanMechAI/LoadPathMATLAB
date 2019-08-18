@@ -50,7 +50,7 @@ tic
     %% Naming output files and killing interfering processes
     
 
-
+    %%TODO: REMOVED DEPENDENCE ON NODEINFO.TXT
     iNode = strjoin([simulationDirectory pathSeparator 'nodeInfo.txt'],'');
     numNodes = importdata(iNode);
     numNodes = numNodes(2);
@@ -60,9 +60,9 @@ tic
     % Detects whether previous data has been computed, if yes, skips
     % recomputation unless forced by user in GUI
 
-    output_path = strjoin([saveDirectory, pathSeparator,'Path Data', pathSeparator, 'data_', modelDataName,'.mat'], '');
+    outputPath = strjoin([saveDirectory, pathSeparator,'Path Data', pathSeparator, 'data_', modelDataName,'.mat'], '');
 
-    if ~exist(output_path, 'file') || recompute
+    if ~exist(outputPath, 'file') || recompute
 
         fprintf('New model or user nominated to recompute data. Starting now.\n')
         waitbar(CURRENT_TIME/totalTime,waitBar,sprintf('Computing Initial Data'))
