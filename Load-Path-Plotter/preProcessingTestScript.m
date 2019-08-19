@@ -1,61 +1,66 @@
-A = cell(0,1);
-B = cell(0,4);
-C = cell(0,19);
-opt = {'MultipleDelimsAsOne',true};
-F_NAME = '/MATLAB-Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/Simulation Files/ds.dat'
-NODE_FORMAT = '%d32%f%f%f'
-ELEMENT_FORMAT = repmat('%d32',[1,19])
-REGEXP_NODES_ELEMS = '/com,\*+\s(?<dataType>Nodes|Elements)'
-MODEL_DATA = '\<(?!the|for\>)(?<modelData>[\w-\d])+'
-STR_NODES = '%[/com,*********** Nodes]'
-% START_NODES = 
-fid = fopen(F_NAME,'rt');
-str = fgetl(fid);
-while ischar(str)
-    [match, nonMatch] = regexp(str, REGEXP_NODES_ELEMS, 'names', 'split')
-    if ~isempty(match)
-        [submatch, nonMatch] = regexp(nonMatch{2}, MODEL_DATA, 'names')
+function [] = preProcessingTestScript()   
+    %TODO: mkdir a preprocessing folder for saving data
+    A = cell(0,1);
+    B = cell(0,4);
+    C = cell(0,19);
+    opt = {'MultipleDelimsAsOne',true};
+    F_NAME = '/MATLAB Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/Simulation Files/ds.dat'
+    OUT_PATH = '/MATLAB Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/_output_data/'
+    NODE_FORMAT = '%d32%f%f%f'
+    ELEMENT_FORMAT = repmat('%d32',[1,19])
+    REGEXP_NODES_ELEMS = '/com,\*+\s(?<dataType>Nodes|Elements)'
+    MODEL_DATA = '\<(?!the|for\>)(?<modelData>[\w-\d])+'
+    STR_NODES = '%[/com,*********** Nodes]'
+    % START_NODES = 
+    fileId = fopen(F_NAME,'rt')
+    str = fgetl(fileId);
+    while ischar(str)
+        [match, nonMatch] = regexp(str, REGEXP_NODES_ELEMS, 'names', 'split');
+        if ~isempty(match)
+            [submatch, nonMatch] = regexp(nonMatch{2}, MODEL_DATA, 'names')
+            [matObj, variable] = initialiseMatFile(fileId, OUT_PATH);
+        end
+        str = fgetl(fileId);
+    end
+    fclose(fileId);
+        function [matFileObject, storedVariable] = initialiseMatFile(fileId, fullPath)
+            %getArrayLength - This function returns the a scalar used to preallocate memory for arrays used when preprocessing data
+            %
+            % Syntax: [dataArray] = myFun(input)
+            %
+            % Long description
+            %TODO: ADD IDENTIFIER TO OUTPUT FILE NAMES TO DISTINGUISH BETWEEN NODES AND ELEMENTS
+            caseType = match.dataType;
+            
+            switch caseType
+                case 'Nodes'
+                    outputFormat = NODE_FORMAT;
+                case 'Elements'
+                    outputFormat = ELEMENT_FORMAT;
+                    fgetl(fileId)
+                otherwise
+                    return
+            end
         
-
-        fgetl(fid)
-        dataArray = textscan(fid,outputFormat,opt{:});
+            str = fgetl(fileId);
+            str = split(str,',');
+            arrayLength = str2num(str{end})-1;
+            outputPath = [fullPath strjoin({submatch.modelData},'_') '.mat'];
+            storedVariable = 'coords';
+            switch caseType
+                case 'Nodes'
+                    coords = zeros(arrayLength,count(outputFormat,'%'));
+                case 'Elements'
+                    storedVariable = 'connectivity';
+                    connectivity = zeros(arrayLength,count(outputFormat,'%'));
+                otherwise
+                    return
+            end
+            save(outputPath, storedVariable, '-v7.3');
+            matFileObject = matfile(outputPath, 'Writable', true);
+            fgetl(fileId)
+            matFileObject.(storedVariable) = textscan(fileId,outputFormat,opt{:});
+        end
     end
-    str = fgetl(fid);
-end
-fclose(fid);
-function [arrayLength] = getArrayLength(fileId, fullPath)
-    %getArrayLength - This function returns the a scalar used to preallocate memory for arrays used when preprocessing data
-    %
-    % Syntax: [dataArray] = myFun(input)
-    %
-    % Long description
-
-    fgetl(fid)
-    caseType = match.dataType
-    switch caseType
-        case 'Nodes'
-            %leaving as a case switch for future
-        case 'Elements'
-            fgetl(fid)
-        otherwise
-            return
-    end
-
-    str = fgetl(fid)
-    str = split(str,',')
-    arrayLength = str2num(str(end))-1
-    outputPath = [fullPath strjoin({submatch.modelData},'_')]
-    switch caseType
-        case 'Nodes'
-            coords = zeros(arrayLength,count(NODE_FORMAT,'%'))
-            save(outputPath, 'coords', '-v7.3')
-        case 'Elements'
-            connectivity = zeros(arrayLength,count(ELEMENT_FORMAT,'%'))
-            save(outputPath, 'connectivity', '-v7.3')
-        otherwise
-            return
-    end
-end
-
 
 
