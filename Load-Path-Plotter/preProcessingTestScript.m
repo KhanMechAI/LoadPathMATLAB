@@ -64,7 +64,7 @@ function [] = preProcessingTestScript()
             
                 tmp = textscan(fileId,outputFormat,opt{:});
                 endIdx = length(tmp{1}(1:end-1));
-                connectivity(1:endIdx) = tmp{1}(1:end-1);
+                connectivity(1:endIdx, :) = tmp{1}(1:end-1);
             
                 dataLabels = ["connectivity"];
                 inputData.connectivity = connectivity;
@@ -74,7 +74,7 @@ function [] = preProcessingTestScript()
             %readNode - Reads node coordinate data and transforms the data ready for saving
             %
             % Syntax: [dataLabels, inputData] = readNode()
-                coords = zeros(arrayLength,3, 'single');
+                coords = zeros(arrayLength, 3, 'single');
                 nodeIdx = zeros(arrayLength, 1, 'int32');
                 
                 tmp = textscan(fileId,outputFormat,opt{:});
@@ -84,7 +84,7 @@ function [] = preProcessingTestScript()
                 coords(1:endIdx+1,:) = cell2mat({tmp{2:end}});
                 coords = coords(1:end-1,:);
 
-                dataLabels = ["nodeIdx","coords"];
+                dataLabels = ["nodeIdx", "coords"];
                 inputData.nodeIdx = nodeIdx;
                 inputData.coords = coords;
             end
