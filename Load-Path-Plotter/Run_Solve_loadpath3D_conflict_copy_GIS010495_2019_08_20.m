@@ -50,7 +50,7 @@ tic
     %% Naming output files and killing interfering processes
     
 
-    %%TODO: REMOVE DEPENDENCE ON NODEINFO.TXT
+    %%TODO: REMOVED DEPENDENCE ON NODEINFO.TXT
     iNode = strjoin([simulationDirectory pathSeparator 'nodeInfo.txt'],'');
     numNodes = importdata(iNode);
     numNodes = numNodes(2);
