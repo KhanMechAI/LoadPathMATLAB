@@ -7,8 +7,8 @@ function [] = preProcessingTestScript()
     opt = {'MultipleDelimsAsOne',true};
     F_NAME = '/MATLAB Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/Simulation Files/ds.dat';
     OUT_PATH = '/MATLAB Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/_output_data/';
-    NODE_FORMAT = '%d32%f32%f32%f32';
-    ELEMENT_FORMAT = repmat('%d32',[1,19]);
+    NODE_FORMAT = '%u32%f32%f32%f32';
+    ELEMENT_FORMAT = repmat('%u32',[1,19]);
     REGEXP_NODES_ELEMS = '/com,\*+\s(?<dataType>Nodes|Elements)';
     MODEL_DATA = '\<(?!the|for\>)(?<modelData>[\w-\d])+';
     STR_NODES = '%[/com,*********** Nodes]';
@@ -60,14 +60,14 @@ function [] = preProcessingTestScript()
                 %readElement - Reads element connectivity data and transforms the data ready for saving
                 %
                 % Syntax: [dataLabels, inputData] = readElement()
-                connectivity = zeros(arrayLength,count(outputFormat,'%'), 'int32');
+                connectivity = zeros(arrayLength,count(outputFormat,'%'), 'uint32');
             
-                tmp = textscan(fileId,outputFormat,opt{:});
-                endIdx = length(tmp{1}(1:end-1));
-                connectivity(1:endIdx, :) = tmp{1}(1:end-1);
+                tmp = textscan(fileId, outputFormat, opt{:});
+                endIdx = length(tmp{1}(1:end));
+                connectivity(1:endIdx, :) = [tmp{:}];
             
                 dataLabels = ["connectivity"];
-                inputData.connectivity = connectivity;
+                inputData.connectivity = connectivity(1:end-1,:);
             end
             
             function [dataLabels, inputData] = readNode()
@@ -75,14 +75,14 @@ function [] = preProcessingTestScript()
             %
             % Syntax: [dataLabels, inputData] = readNode()
                 coords = zeros(arrayLength, 3, 'single');
-                nodeIdx = zeros(arrayLength, 1, 'int32');
+                nodeIdx = zeros(arrayLength, 1, 'uint32');
                 
                 tmp = textscan(fileId,outputFormat,opt{:});
                 endIdx = length(tmp{1}(1:end-1));
 
                 nodeIdx(1:endIdx) = tmp{1}(1:end-1);
-                coords(1:endIdx+1,:) = cell2mat({tmp{2:end}});
-                coords = coords(1:end-1,:);
+                coords(1:endIdx+1, :) = cell2mat({tmp{2:end}});
+                coords = coords(1:end-1, :);
 
                 dataLabels = ["nodeIdx", "coords"];
                 inputData.nodeIdx = nodeIdx;
@@ -145,5 +145,53 @@ function [] = getNLines(fileId, n)
     end
 end
 
+function [varargout] = getElementType(elementTypeString)
+%getElementType - Parses the element type and returns the connectivity
+%
+% Syntax: [connectivity] = getElementType(elementTypeString)
+%
+% Long description
+    elementType = split(elementTypeString,',')
+    iBody = uint32(str2num(elementType(2)))
+    element = uint32(str2num(elementType(3)))
 
+    temp = {element, iBody}
+    for k = 1:nargout
+        varargout{k} = temp{k}
+    end
+end
+
+function [varargout] = parseEblock(eblockString)
+%parseEblock - This function processes the element type string and returns the format of the element definition in the ds.dat file and the element connectivity
+%
+% Syntax: [varargout] = parseEblock(eblockString)
+%
+% Long description
+    eblock = split(eblockString,',')
+    nElements = uint32(str2num(eblock(end)))
+    solid = false
+    if any(strcmp(eblock, 'solid'))
+        solid = true
+    end
+    temp = {nElements, solid}
+    for k = 1:nargout
+        varargout{k} = temp{k}
+    end
+end
+
+function [output] = getReadFormat(elementType, solid, nNodes, varargin)
+%getReadFormat - Description
+%
+% Syntax: [output] = getReadFormat(elementType, )
+%
+% Long description
+%TODO: Need to setup the read formats and also the other 1-12 fields and separate from the nodal connectivity. Need to store each field in its own variable in the mat file. thsi function should output the formats to then write into the mat file.
+    if solid
+        nNodesPerElement = varargin(9)
+        readFormatLength = length(varargin(12:end))
+        nodeReadFormat = repmat('%u32',[1,nNodesPerElement]);
+        solidCell
+    end
+    
+end
 
