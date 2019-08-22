@@ -1,9 +1,7 @@
 function [] = preProcessingTestScript()   
     %TODO: mkdir a preprocessing folder for saving data
     %TODO: Need to implement a memory size check for large simulations. Then a differnet approach with perhaps tall arrays can be used to manage big data simulations
-    A = cell(0,1);
-    B = cell(0,4);
-    C = cell(0,19);
+
     opt = {'MultipleDelimsAsOne',true};
     F_NAME = '/MATLAB Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/Simulation Files/ds.dat';
     OUT_PATH = '/MATLAB Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/_output_data/';
@@ -132,19 +130,6 @@ function [nameArray] = nameGen(inputData)
     nameArray(:,1) = "inputData." + inputData(:,:);
 end
 
-
-%PENDING DELETE
-function [] = getNLines(fileId, n)
-%getNLines - Iterates over 'n' lines of a file
-%
-% Syntax: [] = getNLines(input)
-%
-% Long description
-    for k=1:n
-        fgetl(fileId)
-    end
-end
-
 function [varargout] = getElementType(elementTypeString)
 %getElementType - Parses the element type and returns the connectivity
 %
@@ -169,29 +154,48 @@ function [varargout] = parseEblock(eblockString)
 % Long description
     eblock = split(eblockString,',')
     nElements = uint32(str2num(eblock(end)))
-    solid = false
+    isSolid = false
     if any(strcmp(eblock, 'solid'))
-        solid = true
+        isSolid = true
     end
-    temp = {nElements, solid}
+    temp = {nElements, isSolid}
     for k = 1:nargout
         varargout{k} = temp{k}
     end
 end
 
-function [output] = getReadFormat(elementType, solid, nNodes, varargin)
+function [output] = getReadFormat(elementType, isSolid, nNodes, varargin)
 %getReadFormat - Description
 %
 % Syntax: [output] = getReadFormat(elementType, )
 %
 % Long description
 %TODO: Need to setup the read formats and also the other 1-12 fields and separate from the nodal connectivity. Need to store each field in its own variable in the mat file. thsi function should output the formats to then write into the mat file.
-    if solid
+    if isSolid
         nNodesPerElement = varargin(9)
-        readFormatLength = length(varargin(12:end))
         nodeReadFormat = repmat('%u32',[1,nNodesPerElement]);
         solidCell
     end
     
 end
 
+function [nLines] = getNLines(fileId, n)
+    %getNLines - Iterates over 'n' lines of a file returning each in a cell of a cell array
+    %
+    % Syntax: [] = getNLines(input)
+    %
+    % Long description
+    nLines = strings(n,1)
+    for k=1:n
+        nLines(k,:) = fgetl(fileId)
+    end
+end
+
+function [connectivity] = getConnectivity(elementType)
+%getConnectivity - Returns the connectivity of a specific element type.
+%
+% Syntax: [connectivity] = getConnectivity(elementType)
+%
+% Long description
+    
+end
