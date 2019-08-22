@@ -1,27 +1,60 @@
 function [] = preProcessingTestScript()   
     %TODO: mkdir a preprocessing folder for saving data
     %TODO: Need to implement a memory size check for large simulations. Then a differnet approach with perhaps tall arrays can be used to manage big data simulations
+    % START_NODES = 
+    ANSYS = 1
+    STRAND7 = 2
+    softwareImport = 1
+    switch softwareImport
+        case ANSYS
+            readAnsys()
+        case STRAND7
+            readStrand7()
+        otherwise
+            return error("Incompatible software type.")
+    end
+end
 
+function [output] = readAnsys(fileId)
+%readAnsys - ANSYS specific import
+%
+% Syntax: [output] = readAnsys(fileId)
+%
+% Long description
     opt = {'MultipleDelimsAsOne',true};
-    F_NAME = '/MATLAB Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/Simulation Files/ds.dat';
-    OUT_PATH = '/MATLAB Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/_output_data/';
-    NODE_FORMAT = '%u32%f32%f32%f32';
-    ELEMENT_FORMAT = repmat('%u32',[1,19]);
+    fileName = '/MATLAB Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/Simulation Files/ds.dat';
+    outputPath = '/MATLAB Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/_output_data/';
+    formatNodes = '%u32%f32%f32%f32';
+    formatElements = repmat('%u32',[1,19]);
     REGEXP_NODES_ELEMS = '/com,\*+\s(?<dataType>Nodes|Elements)';
     MODEL_DATA = '\<(?!the|for\>)(?<modelData>[\w-\d])+';
     STR_NODES = '%[/com,*********** Nodes]';
-    % START_NODES = 
-    fileId = fopen(F_NAME,'rt');
+
+    [const] = loadConstants("ANSYS")
+    fileId = fopen(fileName,'rt');
     str = fgetl(fileId);
     while ischar(str)
         [match, nonMatch] = regexp(str, REGEXP_NODES_ELEMS, 'names', 'split');
         if ~isempty(match)
             [submatch, nonMatch] = regexp(nonMatch{2}, MODEL_DATA, 'names');
-            [matObj] = initialiseMatFile(fileId, OUT_PATH);
+            [matObj] = initialiseMatFile(fileId, outputPath);
         end
         str = fgetl(fileId);
     end
     fclose(fileId);
+end
+
+function [constStruct] = loadConstants(softwareImport)
+%loadConstants - Loads the package specific constants to fascilitate importing
+%
+% Syntax: [constStruct] = loadConstants(softwareImport)
+%
+% Long description
+    CONSTANTS_FILE = "constants.mat"
+    constStruct = load(CONSTANTS_FILE, softwareImport)
+end
+
+    
         function [matFileObject] = initialiseMatFile(fileId, fullPath)
             %getArrayLength - This function returns the a scalar used to preallocate memory for arrays used when preprocessing data
             %
@@ -36,9 +69,9 @@ function [] = preProcessingTestScript()
 
             if caseType
                 fgetl(fileId);
-                outputFormat = ELEMENT_FORMAT;
+                outputFormat = formatElements;
             elseif caseType > -1
-                outputFormat = NODE_FORMAT;
+                outputFormat = formatNodes;
             else
                 return
             end
