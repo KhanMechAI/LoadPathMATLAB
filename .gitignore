@@ -15,7 +15,7 @@ Define_Waitbar.m
 *.MATLABDriveTag
 *.DS_Store
 *.mat
-
+*.m~
 _conflict_copy_GIS010495_2019_08_19.gitignore
 .git-old/hooks/prepare-commit-msg_conflict_copy_GIS010495_2019_08_19.sample
 .git-old/hooks/pre-receive_conflict_copy_GIS010495_2019_08_19.sample
