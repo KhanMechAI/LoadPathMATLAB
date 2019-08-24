@@ -10,16 +10,17 @@ function [] = preProcessingTestScript()
     NODE_FORMAT = '%u32%f32%f32%f32';
     ELEMENT_FORMAT = repmat('%u32',[1,19]);
     REGEXP_NODES_ELEMS = '/com,\*+\s(?<dataType>Nodes|Elements)';
+    tmp = '(?:(?<blockType>n|e)block,)(?:(?<feilds>[\d+]|[\w*]),?)*';
     MODEL_DATA = '\<(?!the|for\>)(?<modelData>[\w-\d])+';
     STR_NODES = '%[/com,*********** Nodes]';
     % START_NODES = 
     fileId = fopen(F_NAME,'rt');
     str = fgetl(fileId);
     while ischar(str)
-        [match, nonMatch] = regexp(str, REGEXP_NODES_ELEMS, 'names', 'split');
+        [match, nonMatch] = regexp(str, tmp, 'names', 'split');
         if ~isempty(match)
             [submatch, nonMatch] = regexp(nonMatch{2}, MODEL_DATA, 'names');
-            [matObj] = initialiseMatFile(fileId, OUT_PATH);
+            %[matObj] = initialiseMatFile(fileId, OUT_PATH);
         end
         str = fgetl(fileId);
     end
