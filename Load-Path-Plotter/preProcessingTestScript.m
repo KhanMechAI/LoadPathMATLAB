@@ -18,33 +18,40 @@ end
 function generateDirectories(working, directories)
     fn = fieldnames(directories);
     for k = 1:numel(fn)
-        [a, b] = mkdir(working + directories.(fn{k}))
+        [a, b] = mkdir(working + directories.(fn{k}));
     end
 end
 
-
 function [output] = readAnsys(fileId)
-%readAnsys - ANSYS specific import
-%
-% Syntax: [output] = readAnsys(fileId)
-%
-% Long description
-%/Users/khan/MATLAB-Drive
-    pathSep = "/"
-    ANSYS = "ANSYS"
-    [const] = loadConstants(ANSYS)
-    TMP1 = "/Users/khan/MATLAB-Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/Simulation Files/"
-    TMP2 = "/Users/khan/MATLAB-Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/"
+    %readAnsys - ANSYS specific import
+    %
+    % Syntax: [output] = readAnsys(fileId)
+    %
+    % Long description
+    %TODO: Write regex to match the end of element creation and terminate while loop
+    atHome = 0;
+    MATLAB_ONLINE = "/MATLAB Drive/";
+    MATLAB_HOME = "/Users/khan/MATLAB-Drive/";
+    if atHome
+        filePath = MATLAB_HOME;
+    else    
+        filePath = MATLAB_ONLINE;
+    end
+    pathSep = "/";
+    ANSYS = "ANSYS";
+    [const] = loadConstants(ANSYS);
+    TMP1 = filePath + "Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/Simulation Files/";
+    TMP2 = filePath + "Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/";
 
     const = const.(ANSYS);
     fileName = TMP1 + const.files.ds;
 
-    dirs = const.dirs
+    dirs = const.dirs;
 
     prepPath = TMP2 + const.dirs.prepPath;
     outPath = TMP2 + const.dirs.outPath;
 
-    generateDirectories(TMP2, [dirs])
+    generateDirectories(TMP2, [dirs]);
 
     fmt = const.format;
     regex = const.regex;
@@ -65,8 +72,10 @@ function [output] = readAnsys(fileId)
                     nodeBlockCount = nodeBlockCount + 1;
                 case "e"
                     elementPrepPath = TMP2 + dirs.prepPathE + num2str(elementBlockCount) + '.mat'
-                    readElement(fileId, prepPath, blockData, elementPrepPath);
+                    readElement(fileId, elementPrepPath, blockData, prevStr);
                     elementBlockCount = elementBlockCount + 1;
+                case "end"
+                    continue
             end
         end
         prevStr = str;
@@ -81,57 +90,57 @@ function readElement(fileId, prepPath, blockData, elementData)
     % Syntax: [dataLabels, inputData] = readElement()
     %TODO: Write function to handle elements with more than 8 nodes.
 
-    [nLines] = getNLines(fileId, 2)
+    [nLines] = getNLines(fileId, 2);
 
-    elementFields = split(nLines(2,:))
+    elementFields = uint32(str2double(split(strtrim(nLines(2,:)))));
 
-    nElements = blockData(end).fields
+    nElements = uint32(str2double(blockData(end).fields));
 
     if ~isempty([blockData.solid])
-        nodesPerElement = uint32(str2num(elementFields(9)))
+        nodesPerElement = elementFields(9);
     else
-        nodesPerElement = uint32(str2num(blockData(1).fields))
+        nodesPerElement = uint32(str2double(blockData(1).fields));
     end
 
-    outputFormat = repmat("%u32",[1,19]);
-    connectivity = zeros(nElements,nodesPerElement, 'uint32');
-    elementIdx = zeros(nElements,1,'uint32');
+    outputFormat = repmat('%u32',[1,19]);
+    connectivity = zeros([nElements,nodesPerElement], 'uint32');
+    elementIdx = zeros([nElements,1],'uint32');
     
-    tmp = textscan(fileId, outputFormat, 'MultipleDelimsAsOne',true);%Read in all data
-    endIdx = length(tmp{1}(1:end));%Get end index
+    tmp = textscan(fileId, outputFormat, 'MultipleDelimsAsOne',true, 'CollectOutput', true);%Read in all data
+    % endIdx = length(tmp{1}(1:end));%Get end index
 
-    connectivity(1:endIdx, :) = [tmp{:, 12:12+nodesPerElement}];%Read to preallocated array
-    elementIdx(1:endIdx, :) = [tmp{:, 11}];
+    connectivity(:, :) = [elementFields(12:12 + nodesPerElement - 1)'; tmp{:}(1:end-1, 12:12 + nodesPerElement - 1)];%Read to preallocated array
+    elementIdx(:, :) = [elementFields(11); tmp{:}(1:end-1, 11)];
 
     dataLabels = ["elementIdx", "connectivity"];
-    inputData.connectivity = connectivity(1:end-1,:);
+    inputData.connectivity = connectivity;
+    inputData.elementIdx = elementIdx;
 
-    matFileObject = readToMat(prepPath, dataLabels, inputData)
+    matFileObject = readToMat(prepPath, dataLabels, inputData);
 end
 
 function readNode(fileId, blockData, outputFormat, prepPath)
 %readNode - Reads node coordinate data and transforms the data ready for saving
 %
 % Syntax: [dataLabels, inputData] = readNode()
-    maxNodes = uint32(str2num(blockData(end).fields))
+    maxNodes = uint32(str2double(blockData(end).fields));
     
-    fgetl(fileId) %increment the cursor to node block
+    fgetl(fileId); %increment the cursor to node block
     
-    coords = zeros(maxNodes, 3, 'single');
-    nodeIdx = zeros(maxNodes, 1, 'uint32');
+    coords = zeros([maxNodes, 3], 'single');
+    nodeIdx = zeros([maxNodes, 1], 'uint32');
 
-    tmp = textscan(fileId,outputFormat,'MultipleDelimsAsOne',true);
-    endIdx = length(tmp{1}(1:end-1));
+    tmp = textscan(fileId,outputFormat,'MultipleDelimsAsOne', true, 'CollectOutput', true);
+    endIdx = length(tmp{1}(1, 1:end-1));
 
-    nodeIdx(1:endIdx) = tmp{1}(1:end-1);
-    coords(1:endIdx+1, :) = cell2mat({tmp{2:end}});
-    coords = coords(1:end-1, :);
+    nodeIdx(1:endIdx) = tmp{1}(1:endIdx);
+    coords(1:endIdx, :) = tmp{2:end}(1:endIdx);
 
     dataLabels = ["nodeIdx", "coords"];
     inputData.nodeIdx = nodeIdx;
     inputData.coords = coords;
 
-    matFileObject = readToMat(prepPath, dataLabels, inputData)
+    matFileObject = readToMat(prepPath, dataLabels, inputData);
 end
 
 function [retVal] = nodeOrElement(caseType)
@@ -152,7 +161,7 @@ function [arrayLength] = getArrayLength(fileId)
 %
 % Syntax: [arrayLength] = getArrayLength(fileId)
     str = fgetl(fileId); str = split(str,',');
-    arrayLength = str2num(str{end});
+    arrayLength = str2double(str{end});
 end
 
 function [matFileObject] = readToMat(prepPath, dataLabels, inputData)
@@ -182,8 +191,8 @@ function [varargout] = getElementType(elementTypeString)
 %
 % Long description
     elementType = split(elementTypeString,',')
-    iBody = uint32(str2num(elementType(2)))
-    element = uint32(str2num(elementType(3)))
+    iBody = uint32(str2double(elementType(2)))
+    element = uint32(str2double(elementType(3)))
 
     temp = {element, iBody}
     for k = 1:nargout
@@ -198,7 +207,7 @@ function [varargout] = parseEblock(eblockString)
 %
 % Long description
     eblock = split(eblockString,',')
-    nElements = uint32(str2num(eblock(end)))
+    nElements = uint32(str2double(eblock(end)))
     isSolid = false
     if any(strcmp(eblock, 'solid'))
         isSolid = true
@@ -230,9 +239,9 @@ function [nLines] = getNLines(fileId, n)
     % Syntax: [] = getNLines(input)
     %
     % Long description
-    nLines = strings(n,1)
+    nLines = strings(n,1);
     for k=1:n
-        nLines(k,:) = fgetl(fileId)
+        nLines(k,:) = fgetl(fileId);
     end
 end
 
