@@ -2,18 +2,26 @@ function [] = preProcessingTestScript()
     %TODO: mkdir a preprocessing folder for saving data
     %TODO: Need to implement a memory size check for large simulations. Then a differnet approach with perhaps tall arrays can be used to manage big data simulations
     % START_NODES = 
-    ANSYS = 1
-    STRAND7 = 2
-    softwareImport = 1
+    ANSYS = 1;
+    STRAND7 = 2;
+    softwareImport = 1;
     switch softwareImport
         case ANSYS
             readAnsys()
         case STRAND7
             readStrand7()
         otherwise
-            return error("Incompatible software type.")
+            return 
     end
 end
+
+function generateDirectories(working, directories)
+    fn = fieldnames(directories);
+    for k = 1:numel(fn)
+        [a, b] = mkdir(working + directories.(fn{k}))
+    end
+end
+
 
 function [output] = readAnsys(fileId)
 %readAnsys - ANSYS specific import
@@ -21,106 +29,110 @@ function [output] = readAnsys(fileId)
 % Syntax: [output] = readAnsys(fileId)
 %
 % Long description
-    opt = {'MultipleDelimsAsOne',true};
-    fileName = '/MATLAB Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/Simulation Files/ds.dat';
-    outputPath = '/MATLAB Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/_output_data/';
-    formatNodes = '%u32%f32%f32%f32';
-    formatElements = repmat('%u32',[1,19]);
-    REGEXP_NODES_ELEMS = '/com,\*+\s(?<dataType>Nodes|Elements)';
-    MODEL_DATA = '\<(?!the|for\>)(?<modelData>[\w-\d])+';
-    STR_NODES = '%[/com,*********** Nodes]';
+%/Users/khan/MATLAB-Drive
+    pathSep = "/"
+    ANSYS = "ANSYS"
+    [const] = loadConstants(ANSYS)
+    TMP1 = "/Users/khan/MATLAB-Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/Simulation Files/"
+    TMP2 = "/Users/khan/MATLAB-Drive/Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/"
 
-    [const] = loadConstants("ANSYS")
+    const = const.(ANSYS);
+    fileName = TMP1 + const.files.ds;
+
+    dirs = const.dirs
+
+    prepPath = TMP2 + const.dirs.prepPath;
+    outPath = TMP2 + const.dirs.outPath;
+
+    generateDirectories(TMP2, [dirs])
+
+    fmt = const.format;
+    regex = const.regex;
+   
     fileId = fopen(fileName,'rt');
     str = fgetl(fileId);
+    prevStr = "";
+    nodeBlockCount = 1;
+    elementBlockCount = 1;
     while ischar(str)
-        [match, nonMatch] = regexp(str, REGEXP_NODES_ELEMS, 'names', 'split');
+        [match, nonMatch] = regexp(str, regex.block, 'names', 'split');
         if ~isempty(match)
-            [submatch, nonMatch] = regexp(nonMatch{2}, MODEL_DATA, 'names');
-            [matObj] = initialiseMatFile(fileId, outputPath);
+            [blockData, nonMatch] = regexp(nonMatch{2}, regex.fields, 'names', 'split');
+            switch match.fieldType
+                case "n"
+                    nodePrepPath = TMP2 + dirs.prepPathN + num2str(nodeBlockCount) + '.mat'
+                    readNode(fileId, blockData, fmt.nodes, nodePrepPath);
+                    nodeBlockCount = nodeBlockCount + 1;
+                case "e"
+                    elementPrepPath = TMP2 + dirs.prepPathE + num2str(elementBlockCount) + '.mat'
+                    readElement(fileId, prepPath, blockData, elementPrepPath);
+                    elementBlockCount = elementBlockCount + 1;
+            end
         end
+        prevStr = str;
         str = fgetl(fileId);
     end
     fclose(fileId);
 end
 
-function [constStruct] = loadConstants(softwareImport)
-%loadConstants - Loads the package specific constants to fascilitate importing
-%
-% Syntax: [constStruct] = loadConstants(softwareImport)
-%
-% Long description
-    CONSTANTS_FILE = "constants.mat"
-    constStruct = load(CONSTANTS_FILE, softwareImport)
+function readElement(fileId, prepPath, blockData, elementData)
+    %readElement - Reads element connectivity data and transforms the data ready for saving
+    %
+    % Syntax: [dataLabels, inputData] = readElement()
+    %TODO: Write function to handle elements with more than 8 nodes.
+
+    [nLines] = getNLines(fileId, 2)
+
+    elementFields = split(nLines(2,:))
+
+    nElements = blockData(end).fields
+
+    if ~isempty([blockData.solid])
+        nodesPerElement = uint32(str2num(elementFields(9)))
+    else
+        nodesPerElement = uint32(str2num(blockData(1).fields))
+    end
+
+    outputFormat = repmat("%u32",[1,19]);
+    connectivity = zeros(nElements,nodesPerElement, 'uint32');
+    elementIdx = zeros(nElements,1,'uint32');
+    
+    tmp = textscan(fileId, outputFormat, 'MultipleDelimsAsOne',true);%Read in all data
+    endIdx = length(tmp{1}(1:end));%Get end index
+
+    connectivity(1:endIdx, :) = [tmp{:, 12:12+nodesPerElement}];%Read to preallocated array
+    elementIdx(1:endIdx, :) = [tmp{:, 11}];
+
+    dataLabels = ["elementIdx", "connectivity"];
+    inputData.connectivity = connectivity(1:end-1,:);
+
+    matFileObject = readToMat(prepPath, dataLabels, inputData)
 end
 
+function readNode(fileId, blockData, outputFormat, prepPath)
+%readNode - Reads node coordinate data and transforms the data ready for saving
+%
+% Syntax: [dataLabels, inputData] = readNode()
+    maxNodes = uint32(str2num(blockData(end).fields))
     
-        function [matFileObject] = initialiseMatFile(fileId, fullPath)
-            %getArrayLength - This function returns the a scalar used to preallocate memory for arrays used when preprocessing data
-            %
-            % Syntax: [dataArray] = myFun(input)
-            %
-            % Long description
-            %TODO: ADD IDENTIFIER TO OUTPUT FILE NAMES TO DISTINGUISH BETWEEN NODES AND ELEMENTS
-            outputPath = [fullPath strjoin({submatch.modelData},'_') '.mat'];
-            
-            caseType = match.dataType;
-            caseType = nodeOrElement(caseType);
+    fgetl(fileId) %increment the cursor to node block
+    
+    coords = zeros(maxNodes, 3, 'single');
+    nodeIdx = zeros(maxNodes, 1, 'uint32');
 
-            if caseType
-                fgetl(fileId);
-                outputFormat = formatElements;
-            elseif caseType > -1
-                outputFormat = formatNodes;
-            else
-                return
-            end
-            
-            [arrayLength] = getArrayLength(fileId);
-            fgetl(fileId);
-                
-            if caseType
-                [dataLabels, inputData] = readElement();
-            else
-                [dataLabels, inputData] = readNode();
-            end
+    tmp = textscan(fileId,outputFormat,'MultipleDelimsAsOne',true);
+    endIdx = length(tmp{1}(1:end-1));
 
-            matFileObject = readToMat(outputPath, dataLabels, inputData);
+    nodeIdx(1:endIdx) = tmp{1}(1:end-1);
+    coords(1:endIdx+1, :) = cell2mat({tmp{2:end}});
+    coords = coords(1:end-1, :);
 
-            function [dataLabels, inputData] = readElement()
-                %readElement - Reads element connectivity data and transforms the data ready for saving
-                %
-                % Syntax: [dataLabels, inputData] = readElement()
-                connectivity = zeros(arrayLength,count(outputFormat,'%'), 'uint32');
-            
-                tmp = textscan(fileId, outputFormat, opt{:});
-                endIdx = length(tmp{1}(1:end));
-                connectivity(1:endIdx, :) = [tmp{:}];
-            
-                dataLabels = ["connectivity"];
-                inputData.connectivity = connectivity(1:end-1,:);
-            end
-            
-            function [dataLabels, inputData] = readNode()
-            %readNode - Reads node coordinate data and transforms the data ready for saving
-            %
-            % Syntax: [dataLabels, inputData] = readNode()
-                coords = zeros(arrayLength, 3, 'single');
-                nodeIdx = zeros(arrayLength, 1, 'uint32');
-                
-                tmp = textscan(fileId,outputFormat,opt{:});
-                endIdx = length(tmp{1}(1:end-1));
+    dataLabels = ["nodeIdx", "coords"];
+    inputData.nodeIdx = nodeIdx;
+    inputData.coords = coords;
 
-                nodeIdx(1:endIdx) = tmp{1}(1:end-1);
-                coords(1:endIdx+1, :) = cell2mat({tmp{2:end}});
-                coords = coords(1:end-1, :);
-
-                dataLabels = ["nodeIdx", "coords"];
-                inputData.nodeIdx = nodeIdx;
-                inputData.coords = coords;
-            end
-        end
-    end
+    matFileObject = readToMat(prepPath, dataLabels, inputData)
+end
 
 function [retVal] = nodeOrElement(caseType)
     switch caseType
@@ -143,17 +155,17 @@ function [arrayLength] = getArrayLength(fileId)
     arrayLength = str2num(str{end});
 end
 
-function [matFileObject] = readToMat(outputPath, dataLabels, inputData)
+function [matFileObject] = readToMat(prepPath, dataLabels, inputData)
 %readToMat - Description
 %
 % Syntax: [outputFmt] = readToMat(input)
 %
 % Long description
 %TODO: save as structure with variable names - lookup save function for help
-    save(outputPath, '-v7.3', '-struct', 'inputData')
-    matFileObject = matfile(outputPath, 'Writable', true);
+    save(prepPath, '-v7.3', '-struct', 'inputData')
+    matFileObject = matfile(prepPath, 'Writable', true);
     for k = 1:length(inputData)
-        matFileObject.(dataLabels(k,1)) = inputData.(dataLabels(k,1));
+        matFileObject.(char(dataLabels(k,1))) = inputData.(char(dataLabels(k,1)));
     end
 end
 
@@ -231,4 +243,47 @@ function [connectivity] = getConnectivity(elementType)
 %
 % Long description
     
+end
+
+function [constStruct] = loadConstants(softwareImport)
+    %loadConstants - Loads the package specific constants to fascilitate importing
+    %
+    % Syntax: [constStruct] = loadConstants(softwareImport)
+        CONSTANTS_FILE = pwd + "/" + "constants.mat";
+        constStruct = load(CONSTANTS_FILE, softwareImport);
+    end
+    
+        
+function [matFileObject] = initialiseMatFile(fileId, fullPath, blockType, outputFormat)
+    %getArrayLength - This function returns the a scalar used to preallocate memory for arrays used when preprocessing data
+    %
+    % Syntax: [dataArray] = myFun(input)
+    %
+    % Long description
+    %TODO: ADD IDENTIFIER TO OUTPUT FILE NAMES TO DISTINGUISH BETWEEN NODES AND ELEMENTS
+    prepPath = [fullPath strjoin({submatch.modelData},'_') '.mat'];
+
+    caseType = match.dataType;
+    caseType = nodeOrElement(caseType);
+
+    if caseType
+        fgetl(fileId);
+        outputFormat = formatElements;
+    elseif caseType > -1
+        outputFormat = formatNodes;
+    else
+        return
+    end
+
+    [arrayLength] = getArrayLength(fileId);
+    fgetl(fileId);
+
+    if caseType
+        [dataLabels, inputData] = readElement();
+    else
+        [dataLabels, inputData] = readNode();
+    end
+
+    matFileObject = readToMat(prepPath, dataLabels, inputData);
+
 end
