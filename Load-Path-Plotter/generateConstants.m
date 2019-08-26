@@ -1,19 +1,41 @@
 
 
-CONSTANTS_FILE = "constants.mat"
+CONSTANTS_FILE = "constants.mat";
 delete(CONSTANTS_FILE)
-% ANSYS.opt = {'MultipleDelimsAsOne',true};
+
 ANSYS.files.ds = "ds.dat";
-ANSYS.dirs.outPath = "_output_data/";
-ANSYS.dirs.prepPath = "_prep_data/";
-ANSYS.dirs.prepPathN = "_prep_data/n/";
-ANSYS.dirs.prepPathE = "_prep_data/e/";
+ANSYS.files.nodalSol = "nodalSolution.txt";
 ANSYS.format.nodes = "%u32%f32%f32%f32";
 ANSYS.format.elements = repmat("%u32",[1,19]);
 ANSYS.regex.block = "(?<fieldType>n|e)block";
 ANSYS.regex.fields = "(?<fields>\d+)|(?<solid>solid)";
+ANSYS.regex.elemEnd = "/wb,(?<sectionKey>\w+),(?<context>\w+)";
+ANSYS.regex.nodeSolBlock = "\s*(?<sectionKey>NODE)";
 
 
-save(CONSTANTS_FILE, "-v7.3", "ANSYS");
+GENERAL.package.ANSYS = 1;
+GENERAL.package.STRAND7 = 2;
+GENERAL.dirs.outPath = "_output_data/";
+GENERAL.dirs.prepPath = "_prep_data/";
+GENERAL.dirs.prepPathN = "_prep_data/n/";
+GENERAL.dirs.prepPathE = "_prep_data/e/";
+GENERAL.dirs.prepPathGeneral = "_prep_data/g/";
+GENERAL.files.general = "globalSimData.mat";
+GENERAL.files.matExt = ".mat";
+GENERAL.pathSep.OSX = "/";
+GENERAL.pathSep.PC = "\";
+GENERAL.varNames.elementIdx = "elementIdx";
+GENERAL.varNames.connectivity = "connectivity";
+GENERAL.varNames.nElements = "nElements";
+GENERAL.varNames.nodesPerElement = "nodesPerElement";
+GENERAL.varNames.nodeIdx = "nodeIdx";
+GENERAL.varNames.coords = "coords";
+GENERAL.varNames.maxNodes = "maxNodes";
+GENERAL.path.globalData = GENERAL.dirs.prepPathGeneral + GENERAL.files.general;
 
-% matFileObject = matfile(outputPath, "Writable", true);
+vars = {"GENERAL", "ANSYS"};
+
+
+save(CONSTANTS_FILE, "-v7.3", vars{:});
+
+clear

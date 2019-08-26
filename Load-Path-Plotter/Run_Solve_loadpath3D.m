@@ -10,6 +10,7 @@ tic
         pathSeparator = '\';
         system(strjoin(['taskkill /fi "WINDOWTITLE eq ', modelName,'.pdf"'],''));
     end
+    
     modelName = strjoin([string(modelName), ' - ', string(upper(pathDirectory)), ' Path'],'');
     modelDataName = regexprep(modelName, ' ', '_');
 
