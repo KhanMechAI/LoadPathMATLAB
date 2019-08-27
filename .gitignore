@@ -28,5 +28,7 @@ _conflict_copy_GIS010495_2019_08_19.gitignore
 .git-old/hooks/commit-msg_conflict_copy_GIS010495_2019_08_19.sample
 .git-old/hooks/applypatch-msg_conflict_copy_GIS010495_2019_08_19.sample
 Load-Path-Plotter/regexTests.m
-*/_output_data/
-*/_prep_data/
+_output_data
+_prep_data
+Path Data
+Path Plots
