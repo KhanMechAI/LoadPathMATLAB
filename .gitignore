@@ -19,8 +19,8 @@ Load-Path-Plotter/regexTests.m
 _output_data
 _prep_data
 Path Data
-Path Data/
+Examples/**/Path Data/
 Path Plots
-Path Plots/
+Examples/**/Path Plots/
 nodelInfo.txt
 elInfo.txt
