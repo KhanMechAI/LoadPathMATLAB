@@ -30,6 +30,7 @@ function [] = preProcess(package, simDir, workingDir)
 end
 
 function generateDirectories(working, directories)
+    %TODO:  Future imporvement to clear the directories prior to creation.
     fn = fieldnames(directories);
     for k = 1:numel(fn)
         [a, b] = mkdir(working + directories.(fn{k}));
@@ -63,19 +64,41 @@ function [output] = readAnsys(simDir, workingDir)
         %
         % Syntax: varargout = readNodalSol()
         fileName = simDir + const.files.nodalSol;
-
+        
+        dirs = genConst.dirs;
         fmt = const.format;
         regex = const.regex;
+
+        stressPrepPath = dirs.workingDir + dirs.prepPathS + genConst.files.stress;
     
         fileId = fopen(fileName,'rt');
-        str = fgetl(fileId)
+        str = fgetl(fileId);
+        lineTest = true;
 
-        while true
+        maxNodes = getGeneralData(genConst, genConst.varNames.maxNodes);
+
+        stress = zeros([maxNodes, 6], 'single');
+        nodalStressIdx = zeros([maxNodes, 1], 'uint32');
+
+        while lineTest
             [match, nonMatch] = regexp(str, regex.nodeSolBlock, 'names', 'split');
             if ~isempty(match)
-                continue
+                tmp = textscan(fileId, fmt.nodalStress,'MultipleDelimsAsOne', true, 'CollectOutput', true);
+                lineTest = false;
             end
+            str = fgetl(fileId);
         end
+
+        endIdx = length(tmp{1}(1:end, 1));
+
+        nodalStressIdx(1:endIdx) = tmp{1}(1:endIdx);
+        stress(1:endIdx, :) = tmp{2:end}(1:endIdx, :);
+
+        dataLabels = [genConst.varNames.nodalStressIdx, genConst.varNames.stress];
+        inputData.stress = stress;
+        inputData.nodalStressIdx = nodalStressIdx;
+
+        readToMat(stressPrepPath, dataLabels, inputData, false);
     end
 
     function varargout = readDsDat()
@@ -102,7 +125,7 @@ function [output] = readAnsys(simDir, workingDir)
                         readNode(fileId, blockData, fmt.nodes, genConst, nodeBlockCount);
                         nodeBlockCount = nodeBlockCount + 1;
                     case "e"
-                        readElement(fileId, genConst, blockData, prevStr, elementBlockCount);
+                        readElement(fileId, const, genConst, blockData, prevStr, elementBlockCount);
                         elementBlockCount = elementBlockCount + 1;
                     case "end"
                         continue
@@ -116,11 +139,16 @@ function [output] = readAnsys(simDir, workingDir)
     end
 end
 
+function [loadedVar] = getGeneralData(genConst, varToLoad)
+    curDir = genConst.dirs.workingDir + genConst.path.globalData;
+    loadedVar = load(curDir, varToLoad);
+    loadedVar = loadedVar.(varToLoad);
+end
 
 function endElements = atEnd(str, pat)
-%atEnd - Returns true if at the end of the elements. False otherwise.
-%
-% Syntax: endElements = atEnd(str)
+    %atEnd - Returns true if at the end of the elements. False otherwise.
+    %
+    % Syntax: endElements = atEnd(str)
     endElements = false;
 
     [match, nonMatch] = regexp(str, pat, 'names', 'split');
@@ -134,21 +162,15 @@ function endElements = atEnd(str, pat)
     end
 end
 
-function readNodalSol(input)
-%myFun - Description
-%
-% Syntax: readNodalSol(input)
-%
-% Long description
-    
-end
 
-function readElement(fileId, genConst, blockData, elementData)
+function readElement(fileId, const, genConst, blockData, elementData, elementBlockCount)
     %readElement - Reads element connectivity data and transforms the data ready for saving
     %
     % Syntax: [dataLabels, inputData] = readElement()
     %TODO: Write function to handle elements with more than 8 nodes.
     dirs = genConst.dirs;
+    fmt = const.format;
+
     elementPrepPath = dirs.workingDir + dirs.prepPathE + num2str(elementBlockCount) + genConst.files.matExt;
     generalConstPath = dirs.workingDir + genConst.path.globalData;
     [nLines] = getNLines(fileId, 2);
@@ -163,11 +185,10 @@ function readElement(fileId, genConst, blockData, elementData)
         nodesPerElement = uint32(str2double(blockData(1).fields));
     end
 
-    outputFormat = repmat('%u32',[1,19]);
     connectivity = zeros([nElements,nodesPerElement], 'uint32');
     elementIdx = zeros([nElements,1],'uint32');
     
-    tmp = textscan(fileId, outputFormat, 'MultipleDelimsAsOne',true, 'CollectOutput', true);%Read in all data
+    tmp = textscan(fileId, fmt.elements, 'MultipleDelimsAsOne',true, 'CollectOutput', true);%Read in all data
 
     connectivity(:, :) = [elementFields(12:12 + nodesPerElement - 1)'; tmp{:}(1:end-1, 12:12 + nodesPerElement - 1)];%Read to preallocated array
     elementIdx(:, :) = [elementFields(11); tmp{:}(1:end-1, 11)];
@@ -176,28 +197,28 @@ function readElement(fileId, genConst, blockData, elementData)
     inputData.connectivity = connectivity;
     inputData.elementIdx = elementIdx;
 
-    readToMat(elementPrepPath, dataLabels, inputData);
+    readToMat(elementPrepPath, dataLabels, inputData, false);
     
     dataLabels = [genConst.varNames.nElements, genConst.varNames.nodesPerElement];
-    globalData.nElements = nElements;
-    globalData.nodesPerElement = nodesPerElement;
+    globalData.nElements{elementBlockCount} = nElements;
+    globalData.nodesPerElement{elementBlockCount} = nodesPerElement;
     
-    readToMat(generalConstPath, dataLabels, globalData);
-
-
+    readToMat(generalConstPath, dataLabels, globalData, true);
 end
 
 function readNode(fileId, blockData, outputFormat, genConst, nodeBlockCount)
 %readNode - Reads node coordinate data and transforms the data ready for saving
 %
 % Syntax: [dataLabels, inputData] = readNode()
-    dirs = genConst.dirs
-    nodePrepPath = = dirs.workingDir + dirs.prepPathN + num2str(nodeBlockCount) + genConst.files.matExt;
+    dirs = genConst.dirs;
+    nodePrepPath = dirs.workingDir + dirs.prepPathN + num2str(nodeBlockCount) + genConst.files.matExt;
     generalConstPath = dirs.workingDir + genConst.path.globalData;
     maxNodes = uint32(str2double(blockData(end).fields));
     
     fgetl(fileId); %increment the cursor to node block
     
+    genConst.local.maxNodes = maxNodes;
+
     coords = zeros([maxNodes, 3], 'single');
     nodeIdx = zeros([maxNodes, 1], 'uint32');
 
@@ -211,12 +232,12 @@ function readNode(fileId, blockData, outputFormat, genConst, nodeBlockCount)
     inputData.nodeIdx = nodeIdx;
     inputData.coords = coords;
 
-    readToMat(nodePrepPath, dataLabels, inputData);
+    readToMat(nodePrepPath, dataLabels, inputData, false);
 
     dataLabels = [genConst.varNames.maxNodes];
     globalData.maxNodes = maxNodes;
     
-    readToMat(generalConstPath, dataLabels, globalData);
+    readToMat(generalConstPath, dataLabels, globalData, false);
 
 end
 
@@ -229,7 +250,6 @@ function [retVal] = nodeOrElement(caseType)
         otherwise
             retVal = -1;
     end
-    return
 end
 
 
@@ -241,19 +261,22 @@ function [arrayLength] = getArrayLength(fileId)
     arrayLength = str2double(str{end});
 end
 
-function varargout = readToMat(prepPath, dataLabels, inputData)
+function varargout = readToMat(prepPath, dataLabels, inputData, appendData)
 %readToMat - Reads data to matfile
 %
 % Syntax: [matFileObject] = readToMat(prepPath, dataLabels, inputData)
 %TODO: Need to rework to be able to handle any input variable or struct. Currently only a var named 'inputData' will work.
-
-    save(prepPath, '-v7.3', '-struct', 'inputData')
+    if appendData
+        save(prepPath, '-v7.3', '-struct', 'inputData', '-append')
+    else
+        save(prepPath, '-v7.3', '-struct', 'inputData')
+    end
     matFileObject = matfile(prepPath, 'Writable', true);
     for k = 1:length(inputData)
         matFileObject.(char(dataLabels(k,1))) = inputData.(char(dataLabels(k,1)));
     end
 
-    nout = max(nargout, 1) - 1
+    nout = max(nargout, 1) - 1;
 
     varargout{1} = [];
     for k = 1:nout
@@ -278,24 +301,6 @@ function [varargout] = getElementType(elementTypeString)
     element = uint32(str2double(elementType(3)))
 
     temp = {element, iBody}
-    for k = 1:nargout
-        varargout{k} = temp{k}
-    end
-end
-
-function [varargout] = parseEblock(eblockString)
-%parseEblock - This function processes the element type string and returns the format of the element definition in the ds.dat file and the element connectivity
-%
-% Syntax: [varargout] = parseEblock(eblockString)
-%
-% Long description
-    eblock = split(eblockString,',')
-    nElements = uint32(str2double(eblock(end)))
-    isSolid = false
-    if any(strcmp(eblock, 'solid'))
-        isSolid = true
-    end
-    temp = {nElements, isSolid}
     for k = 1:nargout
         varargout{k} = temp{k}
     end
@@ -377,6 +382,6 @@ function [matFileObject] = initialiseMatFile(fileId, fullPath, blockType, output
         [dataLabels, inputData] = readNode();
     end
 
-    matFileObject = readToMat(prepPath, dataLabels, inputData);
+    matFileObject = readToMat(prepPath, dataLabels, inputData, false);
 
 end

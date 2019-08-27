@@ -1,6 +1,6 @@
 endElements = "    NODE       SX             SY             SZ             SXY            SYZ            SXZ     ";
 
-pat = "\s*(?<sectionKey>NODE)";
+pat = "\s+(?<sectionKey>NODE)\s+(?:(?<stressDim>S\w+)\s*)+";
 
 [match, nonMatch] = regexp(endElements, pat, 'names', 'split')
 retval = true;
