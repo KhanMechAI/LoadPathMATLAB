@@ -1,21 +1,9 @@
-_trash_output/Path Plots/Load Path Model 1 - X Path.bmp
-_trash_output/Path Data/data_Load_Path_Model_1_-_X_Path.mat
-_trash_output/Path Data/data_Load_Path_Model_1_-_Y_Path.mat
-_trash_output/Path Data/data_Load_Path_Model_1_-_Z_Path.mat
-_trash_output/Path Data/data_Load_Path_Model_2_-_X_Path.mat
-_trash_output/Path Data/pathdata_Load_Path_Model_1_-_X_Path.mat
-_trash_output/Path Data/pathdata_Load_Path_Model_1_-_Y_Path.mat
-_trash_output/Path Data/pathdata_Load_Path_Model_1_-_Z_Path.mat
-_trash_output/Path Data/pathdata_Load_Path_Model_2_-_X_Path.mat
-_trash_output/Path Plots/Load Path Model 1 - Y Path.bmp
-_trash_output/Path Plots/Load Path Model 1 - Z Path.bmp
-_trash_output/Path Plots/Load Path Model 2 - X Path.bmp
 _trash_output
 Define_Waitbar.m
 *.MATLABDriveTag
 *.DS_Store
 *.mat
-
+*.m~
 _conflict_copy_GIS010495_2019_08_19.gitignore
 .git-old/hooks/prepare-commit-msg_conflict_copy_GIS010495_2019_08_19.sample
 .git-old/hooks/pre-receive_conflict_copy_GIS010495_2019_08_19.sample
@@ -27,3 +15,11 @@ _conflict_copy_GIS010495_2019_08_19.gitignore
 .git-old/hooks/fsmonitor-watchman_conflict_copy_GIS010495_2019_08_19.sample
 .git-old/hooks/commit-msg_conflict_copy_GIS010495_2019_08_19.sample
 .git-old/hooks/applypatch-msg_conflict_copy_GIS010495_2019_08_19.sample
+Load-Path-Plotter/regexTests.m
+_output_data
+_prep_data
+Path Data
+Path Plots
+nodelInfo.txt
+elInfo.txt
+!constants.mat
