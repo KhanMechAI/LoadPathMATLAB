@@ -1,6 +1,7 @@
 function [] = preProcess(package, simDir, workingDir)   
     %TODO: Need to implement a memory size check for large simulations. Then a differnet approach with perhaps tall arrays can be used to manage big data simulations
-    % START_NODES = \
+    %TODO: Build out the preprocessing functions around connectivity and
+    %element faces etc.
     [genConst] = loadConstants("GENERAL");
     ANSYS = genConst.package.ANSYS;
     STRAND7 = genConst.package.STRAND7;
@@ -37,20 +38,14 @@ function generateDirectories(working, directories)
     end
 end
 
-function [output] = readAnsys(simDir, workingDir)
+function [] = readAnsys(simDir, workingDir)
     %readAnsys - ANSYS specific import
     %
     % Syntax: [output] = readAnsys(fileId)
-    %
-    % Long description
-    %TODO: Write regex to match the end of element creation and terminate while loop
     ANSYS = "ANSYS";
             
     [const] = loadConstants(ANSYS);
     [genConst] = loadConstants("GENERAL");
-
-    
-    
 
     generateDirectories(workingDir, [genConst.dirs]);
 
@@ -59,8 +54,47 @@ function [output] = readAnsys(simDir, workingDir)
     readDsDat()
     readNodalSol()
 
+ 
+
+    function varargout = readDsDat()
+        %readDsDat - Imports data from ds.dat file.
+        %
+        % Syntax: varargout = readDsDat()
+        fileName = simDir + const.files.ds;
+
+        fmt = const.format;
+        regex = const.regex;
+    
+        fileId = fopen(fileName,'rt');
+        str = fgetl(fileId);
+        prevStr = "";
+        nodeBlockCount = 1;
+        elementBlockCount = 1;
+    
+        while ~atEnd(str, regex.elemEnd)
+            [match, nonMatch] = regexp(str, regex.block, 'names', 'split');
+            if ~isempty(match)
+                [blockData, nonMatch] = regexp(nonMatch{2}, regex.fields, 'names', 'split');
+                switch match.fieldType
+                    case "n"
+                        readNode(fileId, blockData, fmt.nodes, genConst, nodeBlockCount);
+                        nodeBlockCount = nodeBlockCount + 1;
+                    case "e"
+                        readElement(fileId, const, genConst, blockData, prevStr, elementBlockCount);
+                        elementBlockCount = elementBlockCount + 1;
+                    case "end"
+                        continue
+                end
+            end
+            prevStr = str;
+            str = fgetl(fileId);
+        end
+        fclose(fileId);
+        
+    end   
+    
     function varargout = readNodalSol()
-        %readNodalSol - Description
+        %readNodalSol - reads in the stress data from nodalSolution.txt
         %
         % Syntax: varargout = readNodalSol()
         fileName = simDir + const.files.nodalSol;
@@ -101,42 +135,6 @@ function [output] = readAnsys(simDir, workingDir)
         readToMat(stressPrepPath, dataLabels, inputData, false);
     end
 
-    function varargout = readDsDat()
-        %readDsDat - Imports data from ds.dat file.
-        %
-        % Syntax: varargout = readDsDat()
-        fileName = simDir + const.files.ds;
-
-        fmt = const.format;
-        regex = const.regex;
-    
-        fileId = fopen(fileName,'rt');
-        str = fgetl(fileId);
-        prevStr = "";
-        nodeBlockCount = 1;
-        elementBlockCount = 1;
-    
-        while ~atEnd(str, regex.elemEnd)
-            [match, nonMatch] = regexp(str, regex.block, 'names', 'split');
-            if ~isempty(match)
-                [blockData, nonMatch] = regexp(nonMatch{2}, regex.fields, 'names', 'split');
-                switch match.fieldType
-                    case "n"
-                        readNode(fileId, blockData, fmt.nodes, genConst, nodeBlockCount);
-                        nodeBlockCount = nodeBlockCount + 1;
-                    case "e"
-                        readElement(fileId, const, genConst, blockData, prevStr, elementBlockCount);
-                        elementBlockCount = elementBlockCount + 1;
-                    case "end"
-                        continue
-                end
-            end
-            prevStr = str;
-            str = fgetl(fileId);
-        end
-        fclose(fileId);
-        
-    end
 end
 
 function [loadedVar] = getGeneralData(genConst, varToLoad)
@@ -161,7 +159,6 @@ function endElements = atEnd(str, pat)
         end
     end
 end
-
 
 function readElement(fileId, const, genConst, blockData, elementData, elementBlockCount)
     %readElement - Reads element connectivity data and transforms the data ready for saving
@@ -252,7 +249,6 @@ function [retVal] = nodeOrElement(caseType)
     end
 end
 
-
 function [arrayLength] = getArrayLength(fileId)
 %getArrayLength - Returns the maximum length of the array to be read
 %
@@ -284,18 +280,11 @@ function varargout = readToMat(prepPath, dataLabels, inputData, appendData)
     end
 end
 
-function [nameArray] = nameGen(inputData)
-    %nameGen - This function was to concatenate a string to an array for
-    %saving. Unused currently.
-    nameArray(:,1) = "inputData." + inputData(:,:);
-end
-
 function [varargout] = getElementType(elementTypeString)
-%getElementType - Parses the element type and returns the connectivity
-%
-% Syntax: [connectivity] = getElementType(elementTypeString)
-%
-% Long description
+    %getElementType - Parses the element type and returns the connectivity
+    %
+    % Syntax: [connectivity] = getElementType(elementTypeString)
+
     elementType = split(elementTypeString,',')
     iBody = uint32(str2double(elementType(2)))
     element = uint32(str2double(elementType(3)))
@@ -306,27 +295,10 @@ function [varargout] = getElementType(elementTypeString)
     end
 end
 
-function [output] = getReadFormat(elementType, isSolid, nNodes, varargin)
-%getReadFormat - Description
-%
-% Syntax: [output] = getReadFormat(elementType, )
-%
-% Long description
-%TODO: Need to setup the read formats and also the other 1-12 fields and separate from the nodal connectivity. Need to store each field in its own variable in the mat file. thsi function should output the formats to then write into the mat file.
-    if isSolid
-        nNodesPerElement = varargin(9)
-        nodeReadFormat = repmat('%u32',[1,nNodesPerElement]);
-        solidCell
-    end
-    
-end
-
 function [nLines] = getNLines(fileId, n)
     %getNLines - Iterates over 'n' lines of a file returning each in a cell of a cell array
     %
-    % Syntax: [] = getNLines(input)
-    %
-    % Long description
+    % Syntax: [nLines] = getNLines(input)
     nLines = strings(n,1);
     for k=1:n
         nLines(k,:) = fgetl(fileId);
@@ -334,11 +306,10 @@ function [nLines] = getNLines(fileId, n)
 end
 
 function [connectivity] = getConnectivity(elementType)
-%getConnectivity - Returns the connectivity of a specific element type.
-%
-% Syntax: [connectivity] = getConnectivity(elementType)
-%
-% Long description
+    %getConnectivity - Returns the connectivity of a specific element type.
+    %
+    % Syntax: [connectivity] = getConnectivity(elementType)
+
     
 end
 
@@ -349,39 +320,4 @@ function [constStruct] = loadConstants(loadVar)
         CONSTANTS_FILE = pwd + "/" + "constants.mat";
         constStruct = load(CONSTANTS_FILE, loadVar);
         constStruct = constStruct.(loadVar);
-    end
-    
-        
-function [matFileObject] = initialiseMatFile(fileId, fullPath, blockType, outputFormat)
-    %getArrayLength - This function returns the a scalar used to preallocate memory for arrays used when preprocessing data
-    %
-    % Syntax: [dataArray] = myFun(input)
-    %
-    % Long description
-    %TODO: ADD IDENTIFIER TO OUTPUT FILE NAMES TO DISTINGUISH BETWEEN NODES AND ELEMENTS
-    prepPath = [fullPath strjoin({submatch.modelData},'_') '.mat'];
-
-    caseType = match.dataType;
-    caseType = nodeOrElement(caseType);
-
-    if caseType
-        fgetl(fileId);
-        outputFormat = formatElements;
-    elseif caseType > -1
-        outputFormat = formatNodes;
-    else
-        return
-    end
-
-    [arrayLength] = getArrayLength(fileId);
-    fgetl(fileId);
-
-    if caseType
-        [dataLabels, inputData] = readElement();
-    else
-        [dataLabels, inputData] = readNode();
-    end
-
-    matFileObject = readToMat(prepPath, dataLabels, inputData, false);
-
 end

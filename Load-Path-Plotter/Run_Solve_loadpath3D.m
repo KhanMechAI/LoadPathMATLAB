@@ -5,18 +5,15 @@ function Run_Solve_loadpath3D(simulationDirectory, seedDirectory, saveDirectory,
 tic
 % Closes previously opened waitbars
 
-    pathSeparator = '/';
-    if ispc
-        pathSeparator = '\';
-        system(strjoin(['taskkill /fi "WINDOWTITLE eq ', modelName,'.pdf"'],''));
-    end
-    
+    pathSeparator = osPath()
+    closeWaitBar()
+
+
     modelName = strjoin([string(modelName), ' - ', string(upper(pathDirectory)), ' Path'],'');
     modelDataName = regexprep(modelName, ' ', '_');
 
 
-    F = findall(0,'type','figure','tag','TMWWaitbar');
-    delete(F);
+    
     %X, Y, Z and Intensity information. Can be amended later if more data is needed to be gathered. This sets the preallocated memory size.
     DATA_DIMENSION = 4;
     OUTPUT_DIR = string(saveDirectory) + pathSeparator + '_output_data';
@@ -449,4 +446,30 @@ function [] = modelPlot3D(pathDataMatObject,PartArr,...
     %Turn off plot of colorbar
     colorbar;
     caxis([minInt maxInt])
+end
+
+function pathSeparator = osPath()
+    %osPath - Checks the operating system to then ensuren the correct path separators are used for paths.
+    %
+    % Syntax: pathSeparator = osPath()
+    pathSeparator = '/';
+    if ispc
+        pathSeparator = '\';
+        system(strjoin(['taskkill /fi "WINDOWTITLE eq ', modelName,'.pdf"'],''));
+    end
+end
+
+function closeWaitBar()
+    %closeWaitBar - Closes any hanging waitbars
+    %
+    % Syntax: closeWaitBar()
+    F = findall(0,'type','figure','tag','TMWWaitbar');
+    delete(F);
+end
+
+function cleanPath = osPathCleaner(path)
+    %osPathCleaner - Converts incorrect paths with regex
+    %
+    % Syntax: cleanPath = osPathCleaner(path)
+    % TODO: Populate this function
 end
