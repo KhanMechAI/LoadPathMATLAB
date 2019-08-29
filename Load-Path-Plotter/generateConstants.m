@@ -35,8 +35,9 @@ GENERAL.pathSep.PC = "\";
 
 GENERAL.varNames.elementIdx = "elementIdx";
 GENERAL.varNames.connectivity = "connectivity";
-GENERAL.varNames.nElements = "nElements";
-GENERAL.varNames.nodesPerElement = "nodesPerElement";
+% GENERAL.varNames.nElements = "nElements";
+GENERAL.varNames.elementData = "elementData";
+% GENERAL.varNames.nodesPerElement = "nodesPerElement";
 GENERAL.varNames.nodeIdx = "nodeIdx";
 GENERAL.varNames.coords = "coords";
 GENERAL.varNames.maxNodes = "maxNodes";
