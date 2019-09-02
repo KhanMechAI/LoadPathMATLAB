@@ -8,7 +8,7 @@ function [] = preProcess(package, simDir, workingDir)
     STRAND7 = genConst.package.STRAND7;
     package = 1;
 
-    atHome = 0;
+    atHome = 1;
     MATLAB_ONLINE = "/MATLAB Drive/";
     MATLAB_HOME = "/Users/khan/MATLAB-Drive/";
     if atHome
@@ -54,7 +54,7 @@ function [] = readAnsys(simDir, workingDir)
 
     readDsDat()
     readNodalSol()
-
+    generateData(genConst)
  
 
     function varargout = readDsDat()
@@ -69,8 +69,8 @@ function [] = readAnsys(simDir, workingDir)
         fileId = fopen(fileName,'rt');
         str = fgetl(fileId);
         prevStr = "";
-        nodeBlockCount = 1;
         elementBlockCount = 1;
+        blockElementTypeMapping = {}
     
         while ~atEnd(str, regex.elemEnd)
             [match, nonMatch] = regexp(str, regex.block, 'names', 'split');
@@ -78,10 +78,11 @@ function [] = readAnsys(simDir, workingDir)
                 [blockData, nonMatch] = regexp(nonMatch{2}, regex.fields, 'names', 'split');
                 switch match.fieldType
                     case "n"
-                        readNode(fileId, blockData, fmt.nodes, genConst, nodeBlockCount);
-                        nodeBlockCount = nodeBlockCount + 1;
+                        readNode(fileId, blockData, fmt.nodes, genConst);
                     case "e"
-                        readElement(fileId, const, genConst, blockData, prevStr, elementBlockCount);
+                        [elementType, nonMatch] = regexp(prevStr, regex.elementType, 'names', 'split');
+                        elementType = uint32(str2double(elementType.elementType))
+                        readElement(fileId, const, genConst, blockData, elementType, elementBlockCount);
                         elementBlockCount = elementBlockCount + 1;
                     case "end"
                         continue
@@ -107,21 +108,23 @@ function [] = readAnsys(simDir, workingDir)
         stressPrepPath = dirs.workingDir + dirs.prepPathS + genConst.files.stress;
     
         fileId = fopen(fileName,'rt');
-        str = fgetl(fileId);
+        str = convertCharsToStrings(fgetl(fileId));
         lineTest = true;
 
-        maxNodes = getGeneralData(genConst, genConst.varNames.maxNodes);
+        maxNodes = getData(genConst, "g", genConst.varNames.maxNodes);
 
         stress = zeros([maxNodes, 6], 'single');
         nodalStressIdx = zeros([maxNodes, 1], 'uint32');
-
+        
         while lineTest
-            [match, nonMatch] = regexp(str, regex.nodeSolBlock, 'names', 'split');
+            [match, nonMatch] = regexp(str, regex.nodeSolBlock, 'names', 'noemptymatch');
             if ~isempty(match)
-                tmp = textscan(fileId, fmt.nodalStress,'MultipleDelimsAsOne', true, 'CollectOutput', true);
-                lineTest = false;
+                if length(match)>1 && ~isempty(match{1,2}(:))
+                    tmp = textscan(fileId, fmt.nodalStress,'MultipleDelimsAsOne', true, 'CollectOutput', true);
+                    lineTest = false;
+                end
             end
-            str = fgetl(fileId);
+            str = convertCharsToStrings(fgetl(fileId));
         end
 
         endIdx = length(tmp{1}(1:end, 1));
@@ -138,8 +141,22 @@ function [] = readAnsys(simDir, workingDir)
 
 end
 
-function [loadedVar] = getGeneralData(genConst, varToLoad)
-    curDir = genConst.dirs.workingDir + genConst.path.globalData;
+function [loadedVar] = getData(genConst, dataClass, varargin)
+    varToLoad = varargin{1,1};
+    if nargin > 3
+        body = string(varargin{1,2});
+    end
+    switch dataClass
+        case "e"
+            curDir = genConst.dirs.workingDir + genConst.dirs.prepPathE...
+                     + body + genConst.files.matExt;
+        case "n"
+            curDir = genConst.dirs.workingDir + genConst.path.nodes;
+        case "s"
+            curDir = genConst.dirs.workingDir + genConst.path.stress;
+        case "g"
+            curDir = genConst.dirs.workingDir + genConst.path.globalData;
+    end
     loadedVar = load(curDir, varToLoad);
     loadedVar = loadedVar.(varToLoad);
 end
@@ -161,7 +178,7 @@ function endElements = atEnd(str, pat)
     end
 end
 
-function readElement(fileId, const, genConst, blockData, elementData, elementBlockCount)
+function readElement(fileId, const, genConst, blockData, elementType, elementBlockCount)
     %readElement - Reads element connectivity data and transforms the data ready for saving
     %
     % Syntax: [dataLabels, inputData] = readElement()
@@ -197,19 +214,19 @@ function readElement(fileId, const, genConst, blockData, elementData, elementBlo
 
     readToMat(elementPrepPath, dataLabels, inputData, false);
     
-    dataLabels = [genConst.varNames.nElements, genConst.varNames.nodesPerElement];
+    dataLabels = [genConst.varNames.elementData]
 
-    globalData.elementData = [elementBlockCount, nodesPerElement, nElements]
+    globalData.elementData = [nElements, nodesPerElement, elementType]
    
     readToMat(generalConstPath, dataLabels, globalData, true);
 end
 
-function readNode(fileId, blockData, outputFormat, genConst, nodeBlockCount)
+function readNode(fileId, blockData, outputFormat, genConst)
     %readNode - Reads node coordinate data and transforms the data ready for saving
     %
     % Syntax: [dataLabels, inputData] = readNode()
     dirs = genConst.dirs;
-    nodePrepPath = dirs.workingDir + dirs.prepPathN + num2str(nodeBlockCount) + genConst.files.matExt;
+    nodePrepPath = dirs.workingDir + dirs.prepPathN + genConst.files.nodes;
     generalConstPath = dirs.workingDir + genConst.path.globalData;
     maxNodes = uint32(str2double(blockData(end).fields));
     
@@ -249,6 +266,7 @@ function [retVal] = nodeOrElement(caseType)
             retVal = -1;
     end
 end
+
 
 function [arrayLength] = getArrayLength(fileId)
 %getArrayLength - Returns the maximum length of the array to be read
@@ -323,30 +341,31 @@ function [constStruct] = loadConstants(loadVar)
         constStruct = constStruct.(loadVar);
 end
 
-function [faces] = face_def(elem_type)
-    switch elem_type
-        I = 1; J = 2; K = 3; L = 4; M = 5; N = 6; O = 7; P = 8;
-        Q = 9; R = 10; S = 11; T = 12; U = 13; V = 14; W = 15; X = 16;
-        Y = 17; Z = 18; A = 19; B = 20;
+function [faces] = faceDef(elementType)
+    I = 1; J = 2; K = 3; L = 4; M = 5; N = 6; O = 7; P = 8;
+    Q = 9; R = 10; S = 11; T = 12; U = 13; V = 14; W = 15; X = 16;
+    Y = 17; Z = 18; A = 19; B = 20;
+    switch elementType
+        
         case 185
             faces = [...
-                [J;I;L;K],...
-                [I;J;N;M],...
-                [J;K;O;N],...
-                [K;L;P;O],...
-                [L;I;M;P],...
-                [M;N;O;P],...
+                [J,I,L,K];...
+                [I,J,N,M];...
+                [J,K,O,N];...
+                [K,L,P,O];...
+                [L,I,M,P];...
+                [M,N,O,P];...
                 ];
 
         case 186
             
             faces = [...
-                [J;Q;I;T;L;S;K;R;],...
-                [I;Q;J;Z;N;U;M;Y;],...
-                [J;R;K;A;O;V;N;Z;],...
-                [K;S;L;B;P;W;O;A;],...
-                [L;T;I;Y;M;X;P;B;],...
-                [M;U;N;V;O;W;P;X;],...
+                [J,Q,I,T,L,S,K,R,];...
+                [I,Q,J,Z,N,U,M,Y,];...
+                [J,R,K,A,O,V,N,Z,];...
+                [K,S,L,B,P,W,O,A,];...
+                [L,T,I,Y,M,X,P,B,];...
+                [M,U,N,V,O,W,P,X,];...
                 ];
 
         case 187
@@ -366,5 +385,40 @@ function [faces] = face_def(elem_type)
         %         [L;K;],...
         %         [I;L;],...
         %         ];
+    end
+end
+
+function generateData(genConst)
+
+    elementData = getData(genConst, "g", genConst.varNames.elementData);
+    % nodeIdx = getData(genConst, "n", genConst.varNames.nodeIdx);
+    maxNodes = getData(genConst, "g", genConst.varNames.maxNodes);
+    nBodies = size(elementData, 1);
+    maxElements = 8;
+    nodalConnectivity = zeros(maxNodes, maxElements)
+
+    for k = 1:nBodies
+        faceArray = faceDef(elementData(k,3));
+        [nFaces, nNodesPerFace] = size(faceArray);
+        bodyFaceArray = zeros([elementData(k,1)*nFaces, nNodesPerFace], 'uint32');
+        connectivity = zeros([elementData(k,1), elementData(k,2)], 'uint32');
+        connectivity(:)  = getData(genConst,"e", genConst.varNames.connectivity, k);
+        bodyFaceArray(:) = reshape(connectivity(:,faceArray),elementData(k,1)*nFaces, nNodesPerFace);
+
+        
+        [~, ind, idx] = unique(sort(bodyFaceArray, 2), 'rows');
+        % duplicate indices
+        duplicate_ind = setdiff(1:size(bodyFaceArray, 1), ind);
+        % duplicate values
+        duplicate_value = bodyFaceArray(duplicate_ind, 3);
+        
+        [a, uidx, b] = unique(sort(bodyFaceArray, 2), 'rows');
+        bodySurfaceFaces = bodyFaceArray(uidx,:);
+        for n = 1:maxNodes
+            indices = find(any(connectivity==n,2))
+            nodalConnectivity(n,1:length(indices)) = indices;
+        end
+        nodalConnectivity( ~any(nodalConnectivity,2), : ) = [];  %rows
+        nodalConnectivity( :, ~any(nodalConnectivity,1) ) = [];  %columns
     end
 end

@@ -10,10 +10,11 @@ ANSYS.format.nodes = '%u32%f32%f32%f32';
 ANSYS.format.elements = repmat('%u32',[1,19]);
 ANSYS.format.nodalStress = '%u32%f32%f32%f32%f32%f32%f32';
 
+ANSYS.regex.elementType = "(?:et,)\d*,(?<elementType>\d+)";
 ANSYS.regex.block = "(?<fieldType>n|e)block";
 ANSYS.regex.fields = "(?<fields>\d+)|(?<solid>solid)";
 ANSYS.regex.elemEnd = "/wb,(?<sectionKey>\w+),(?<context>\w+)";
-ANSYS.regex.nodeSolBlock = "\s+(?<sectionKey>NODE)\s+(?:(?<stressDim>S\w+)\s*)+";
+ANSYS.regex.nodeSolBlock = ["\s+(?<sectionKey>NODE)\s+","(?<stressFields>\<S\w{1,2})\s+"];
 
 
 GENERAL.package.ANSYS = 1;
@@ -28,6 +29,7 @@ GENERAL.dirs.prepPathGeneral = "_prep_data/g/";
 
 GENERAL.files.general = "globalSimData.mat";
 GENERAL.files.stress = "s.mat";
+GENERAL.files.nodes = "n.mat";
 GENERAL.files.matExt = ".mat";
 
 GENERAL.pathSep.OSX = "/";
@@ -35,9 +37,7 @@ GENERAL.pathSep.PC = "\";
 
 GENERAL.varNames.elementIdx = "elementIdx";
 GENERAL.varNames.connectivity = "connectivity";
-% GENERAL.varNames.nElements = "nElements";
 GENERAL.varNames.elementData = "elementData";
-% GENERAL.varNames.nodesPerElement = "nodesPerElement";
 GENERAL.varNames.nodeIdx = "nodeIdx";
 GENERAL.varNames.coords = "coords";
 GENERAL.varNames.maxNodes = "maxNodes";
@@ -45,6 +45,8 @@ GENERAL.varNames.nodalStressIdx = "nodalStressIdx";
 GENERAL.varNames.stress = "stress";
 
 GENERAL.path.globalData = GENERAL.dirs.prepPathGeneral + GENERAL.files.general;
+GENERAL.path.nodes = GENERAL.dirs.prepPathGeneral + GENERAL.files.nodes;
+GENERAL.path.stress = GENERAL.dirs.prepPathGeneral + GENERAL.files.stress;
 
 vars = {"GENERAL", "ANSYS"};
 
