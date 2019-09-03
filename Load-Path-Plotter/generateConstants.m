@@ -45,8 +45,8 @@ GENERAL.varNames.nodalStressIdx = "nodalStressIdx";
 GENERAL.varNames.stress = "stress";
 
 GENERAL.path.globalData = GENERAL.dirs.prepPathGeneral + GENERAL.files.general;
-GENERAL.path.nodes = GENERAL.dirs.prepPathGeneral + GENERAL.files.nodes;
-GENERAL.path.stress = GENERAL.dirs.prepPathGeneral + GENERAL.files.stress;
+GENERAL.path.nodes = GENERAL.dirs.prepPathN + GENERAL.files.nodes;
+GENERAL.path.stress = GENERAL.dirs.prepPathE + GENERAL.files.stress;
 
 vars = {"GENERAL", "ANSYS"};
 

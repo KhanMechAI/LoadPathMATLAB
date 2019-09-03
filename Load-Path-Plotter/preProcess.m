@@ -8,7 +8,7 @@ function [] = preProcess(package, simDir, workingDir)
     STRAND7 = genConst.package.STRAND7;
     package = 1;
 
-    atHome = 1;
+    atHome = 0;
     MATLAB_ONLINE = "/MATLAB Drive/";
     MATLAB_HOME = "/Users/khan/MATLAB-Drive/";
     if atHome
@@ -18,8 +18,8 @@ function [] = preProcess(package, simDir, workingDir)
     end
     pathSep = "/";
     
-    simDir = filePath + "Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/Simulation Files/";
-    workingDir = filePath + "Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/";
+    simDir = filePath + "Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Fine/Simulation Files/";
+    workingDir = filePath + "Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Fine/";
 
     switch package
         case ANSYS
@@ -70,7 +70,7 @@ function [] = readAnsys(simDir, workingDir)
         str = fgetl(fileId);
         prevStr = "";
         elementBlockCount = 1;
-        blockElementTypeMapping = {}
+        blockElementTypeMapping = {};
     
         while ~atEnd(str, regex.elemEnd)
             [match, nonMatch] = regexp(str, regex.block, 'names', 'split');
@@ -78,10 +78,10 @@ function [] = readAnsys(simDir, workingDir)
                 [blockData, nonMatch] = regexp(nonMatch{2}, regex.fields, 'names', 'split');
                 switch match.fieldType
                     case "n"
-                        readNode(fileId, blockData, fmt.nodes, genConst);
+                        readNode(fileId, blockData, const, genConst);
                     case "e"
                         [elementType, nonMatch] = regexp(prevStr, regex.elementType, 'names', 'split');
-                        elementType = uint32(str2double(elementType.elementType))
+                        elementType = uint32(str2double(elementType.elementType));
                         readElement(fileId, const, genConst, blockData, elementType, elementBlockCount);
                         elementBlockCount = elementBlockCount + 1;
                     case "end"
@@ -214,18 +214,19 @@ function readElement(fileId, const, genConst, blockData, elementType, elementBlo
 
     readToMat(elementPrepPath, dataLabels, inputData, false);
     
-    dataLabels = [genConst.varNames.elementData]
+    dataLabels = [genConst.varNames.elementData];
 
-    globalData.elementData = [nElements, nodesPerElement, elementType]
+    globalData.elementData = [nElements, nodesPerElement, elementType];
    
     readToMat(generalConstPath, dataLabels, globalData, true);
 end
 
-function readNode(fileId, blockData, outputFormat, genConst)
+function readNode(fileId, blockData, const, genConst)
     %readNode - Reads node coordinate data and transforms the data ready for saving
     %
     % Syntax: [dataLabels, inputData] = readNode()
     dirs = genConst.dirs;
+    fmt = const.format;
     nodePrepPath = dirs.workingDir + dirs.prepPathN + genConst.files.nodes;
     generalConstPath = dirs.workingDir + genConst.path.globalData;
     maxNodes = uint32(str2double(blockData(end).fields));
@@ -237,11 +238,11 @@ function readNode(fileId, blockData, outputFormat, genConst)
     coords = zeros([maxNodes, 3], 'single');
     nodeIdx = zeros([maxNodes, 1], 'uint32');
 
-    tmp = textscan(fileId,outputFormat,'MultipleDelimsAsOne', true, 'CollectOutput', true);
-    endIdx = length(tmp{1}(1, 1:end-1));
+    tmp = textscan(fileId, fmt.nodes,'MultipleDelimsAsOne', true, 'CollectOutput', true);
+    endIdx = length(tmp{1, 1}(:));
 
     nodeIdx(1:endIdx) = tmp{1}(1:endIdx);
-    coords(1:endIdx, :) = tmp{2:end}(1:endIdx);
+    coords(1:endIdx, :) = tmp{2:end}(1:endIdx, :);
 
     dataLabels = [genConst.varNames.nodeIdx, genConst.varNames.coords];
     inputData.nodeIdx = nodeIdx;
@@ -395,7 +396,7 @@ function generateData(genConst)
     maxNodes = getData(genConst, "g", genConst.varNames.maxNodes);
     nBodies = size(elementData, 1);
     maxElements = 8;
-    nodalConnectivity = zeros(maxNodes, maxElements)
+    nodalConnectivity = zeros(maxNodes, maxElements);
 
     for k = 1:nBodies
         faceArray = faceDef(elementData(k,3));
@@ -407,18 +408,121 @@ function generateData(genConst)
 
         
         [~, ind, idx] = unique(sort(bodyFaceArray, 2), 'rows');
+        a = histcounts(idx, length(ind)) < 2;
+        tmp = bodyFaceArray(ind,:);
+        b = tmp(a,:);
+        plotFaces(genConst, b)
         % duplicate indices
         duplicate_ind = setdiff(1:size(bodyFaceArray, 1), ind);
         % duplicate values
         duplicate_value = bodyFaceArray(duplicate_ind, 3);
         
-        [a, uidx, b] = unique(sort(bodyFaceArray, 2), 'rows');
+        [~, uidx, b] = unique(sort(bodyFaceArray, 2), 'rows');
         bodySurfaceFaces = bodyFaceArray(uidx,:);
         for n = 1:maxNodes
-            indices = find(any(connectivity==n,2))
+            indices = find(any(connectivity==n,2));
             nodalConnectivity(n,1:length(indices)) = indices;
         end
         nodalConnectivity( ~any(nodalConnectivity,2), : ) = [];  %rows
         nodalConnectivity( :, ~any(nodalConnectivity,1) ) = [];  %columns
     end
+end
+
+function [coords] = getCoords(genConst, nodeNumber)
+    %getCoords - Description
+    %
+    % Syntax: [coords] = getCoords(nodeNumber)
+    %
+    % Long description
+    nodes = matfile(genConst.dirs.workingDir + genConst.path.nodes);
+    idx = nodes.nodeIdx(nodeNumber, :);
+    coords = nodes.coords(idx,:);
+end
+
+function plotFaces(genConst, faceArray)
+    %plotFaces - Description
+    %
+    % Syntax: plotFaces(faceArray)
+    %
+    % Long description
+    nodes = reshape(faceArray,[],1);
+    [uNodes, ~, ic] = unique(nodes);
+    coords = getCoords(genConst, uNodes);
+    faceCoords = coords(ic, :);
+    [nRows, nCols] = size(faceArray);
+    faceCoords = reshape(faceCoords, nRows, nCols,[]);
+    tmp = permute(faceCoords, [2 1 3]);
+
+    triangulatedFaceCoords = [tmp([1:3], :,:), tmp([1,3,4], :,:)];
+    
+    triIntersect([0, 0, 0], triangulatedFaceCoords)
+    
+    patch('XData',X,'YData',Y,'ZData',Z, 'EdgeColor','black','FaceColor','none', 'EdgeAlpha', 0.3)
+    
+end
+
+function [in] = triIntersect(point, faceVerticies)
+    %triIntersect - Description
+    %
+    % Syntax: [in] = triIntersect(point, faceVerticies)
+    %
+    % Long description
+    tol = 0.000001;
+    distantPoint = [1e8 1e8 1e8];
+
+    V0 = squeeze(faceVerticies(1, :, :));
+    V1 = squeeze(faceVerticies(2, :, :));
+    V2 = squeeze(faceVerticies(3, :, :));
+    u = V1 - V0;
+    v = V2 - V0;
+    n = cross(u,v);
+
+    if all(~n)
+        in = false;
+        return
+    end
+    ray = distantPoint - point;
+    w0 = point - V0;
+    a = -dot(n, w0);
+    b = dot(n, ray);
+    
+    if abs(b) < tol
+        if a == 0
+            in = true;
+            return 
+        else
+            in = false;
+            return
+        end
+    end
+
+    r = a/b;
+    if r < 0
+        in = false;
+        return
+    end
+
+    I = point + r * ray;
+
+    uu = dot(u,u);
+    uv = dot(u,v);
+    vv = dot(v,v);
+    w = I - V0;
+    wu = dot(w,u);
+    wv = dot(w,v);
+    D = uv * uv - uu * vv;
+
+    s = (uv * wv - vv * wu) / D;
+
+    if (s < 0.0) || (s > 1.0)
+        in = false;
+        return
+    end
+    
+    t = (uv * wu - uu * wv) / D;
+    if (t < 0.0 || (s + t) > 1.0)
+        in = false;
+        return 
+    end
+    in = true;
 end
