@@ -161,7 +161,11 @@ function pushbutton4_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
     [file_name, path_dir] = uigetfile({'*.txt'}, 'Select Seed Point File');
     if path_dir == 0
-        full_path = pwd;
+        if isempty(handles.cmd_getDir.UserData)
+            full_path = pwd;
+        else
+            full_path = handles.cmd_getDir.UserData;
+        end
     else
         full_path = [path_dir file_name];
     end
@@ -498,24 +502,7 @@ helpmessage = ...
 h = helpdlg(helpmessage, 'Save Directory Selection');
 
 help_dialog_settings(h)
-
-
-% function retval = save_dir_check(save_dir)
-%     retval = 1;
-%     errmsg = '';
-%     
-%     if ~exist(save_dir, 'file')
-%         retval = 0;
-%         errmsg = ['The file does not exist.'...
-%             newline newline...
-%             'See "What''''s This?" for details on how to fill this field.'];
-%     end
-%     
-%     if ~retval
-%         errordlg(errmsg,'File Error');
-%     end
-
-    
+  
 
     
 function [retval] = sim_folder_check(sim_dir)
@@ -608,7 +595,7 @@ function pushbutton12_Callback(hObject, eventdata, handles)
     %dimension = handles.popupmenu1.String{handles.popupmenu1.Value};
     pathSeparator = osPath()
     [general] = loadConstants("general",pathSeparator);
-    general.pathSep = pathSeparator;
+    general.local.pathSep = pathSeparator;
     general.constants.dimension = '3D';
     general.constants.modelName = handles.edit3.String;
     general.constants.pulse = handles.checkbox4.Value;
@@ -623,6 +610,7 @@ function pushbutton12_Callback(hObject, eventdata, handles)
     general.constants.pathLength = handles.edit6.UserData;
     general.constants.plotMiniumVector = handles.edit7.UserData;
     general.constants.plotMaximumVector = handles.edit8.UserData;
+    general = preProcess(general);
     Run_Solve_loadpath3D(general);
 
 

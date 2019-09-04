@@ -1,32 +1,19 @@
-function [] = preProcess(package, simulationDir, workingDir)   
+function [general] = preProcess(general)   
     %TODO: Need to implement a memory size check for large simulations. Then a differnet approach with perhaps tall arrays can be used to manage big data simulations
     %TODO: Build out the preprocessing functions around connectivity and
     %element faces etc.
     %TODO: read in the seed file?
-    atHome = 1;
-    MATLAB_ONLINE = "/MATLAB Drive/";
-    MATLAB_HOME = "/Users/khan/MATLAB-Drive/";
-    if atHome
-        filePath = MATLAB_HOME;
-    else    
-        filePath = MATLAB_ONLINE;
-    end
-    pathSep = "/";
 
-    [general] = loadConstants("general", pathSep);
+    pathSep = general.local.pathSep;
+
     ANSYS = general.package.ANSYS;
     STRAND7 = general.package.STRAND7;
     package = 1;
 
-    general.dirs.simulationDir = filePath + "Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/Simulation Files/";
-    general.dirs.workingDir = filePath + "Load-Path-Plotter/LoadPathMATLAB/Load-Path-Plotter/Examples/Example10 - Notched Plate Coarse/";
-
-    general.pathSep = pathSep;
-
 
     switch package
         case ANSYS
-            readAnsys(general)
+            readAnsys()
         case STRAND7
             readStrand7()
         otherwise
@@ -34,6 +21,179 @@ function [] = preProcess(package, simulationDir, workingDir)
     end
 
 
+
+
+
+    function [] = readAnsys()
+        %readAnsys - ANSYS specific import
+        %
+        % Syntax: [output] = readAnsys(fileId)
+        ANSYS = "ANSYS";
+        pathSep = general.local.pathSep;
+        [const] = loadConstants(ANSYS, pathSep);
+
+        generateDirectories(general);
+
+        readDsDat()
+        readNodalSol()
+        generateData(general)
+    
+
+        function varargout = readDsDat()
+            %readDsDat - Imports data from ds.dat file.
+            %
+            % Syntax: varargout = readDsDat()
+            fileName = general.dirs.simulationDir + const.files.ds;
+
+            regex = const.regex;
+        
+            fileId = fopen(fileName,'rt');
+            str = fgetl(fileId);
+            prevStr = "";
+            elementBlockCount = 1;
+            blockElementTypeMapping = {};
+        
+            while ~atEnd(str, regex.elemEnd)
+                [match, nonMatch] = regexp(str, regex.block, 'names', 'split');
+                if ~isempty(match)
+                    [blockData, nonMatch] = regexp(nonMatch{2}, regex.fields, 'names', 'split');
+                    switch match.fieldType
+                        case "n"
+                            readNode();
+                        case "e"
+                            [elementBlockData, nonMatch] = regexp(prevStr, regex.elementBlockData, 'names', 'split');
+                            elementType = uint32(str2double(elementBlockData.elementType));
+                            iBody = uint32(str2double(elementBlockData.iBody));
+                            readElement();
+                            elementBlockCount = elementBlockCount + 1;
+                        case "end"
+                            continue
+                    end
+                end
+                prevStr = str;
+                str = fgetl(fileId);
+            end
+            fclose(fileId);
+
+            function readElement()
+                %readElement - Reads element connectivity data and transforms the data ready for saving
+                %
+                % Syntax: [dataLabels, inputData] = readElement()
+                %TODO: Write function to handle elements with more than 8 nodes.
+
+                
+                [nLines] = getNLines(fileId, 2);
+            
+                elementFields = uint32(str2double(split(strtrim(nLines(2,:)))));
+            
+                nElements = uint32(str2double(blockData(end).fields));
+            
+                if ~isempty([blockData.solid])
+                    nodesPerElement = elementFields(9);
+                else
+                    nodesPerElement = uint32(str2double(blockData(1).fields));
+                end
+
+                general.local.body{iBody}.elementData(elementBlockCount,:) = [nElements, nodesPerElement, elementType];
+
+                connectivity = zeros([nElements,nodesPerElement], 'uint32');
+                elementIdx = zeros([nElements,1],'uint32');
+                
+                tmp = textscan(fileId, const.format.elements, 'MultipleDelimsAsOne',true, 'CollectOutput', true);%Read in all data
+            
+                connectivity(:, :) = [elementFields(12:12 + nodesPerElement - 1)'; tmp{:}(1:end-1, 12:12 + nodesPerElement - 1)];%Read to preallocated array
+                elementIdx(:, :) = [elementFields(11); tmp{:}(1:end-1, 11)];
+
+                iBodyiBlockNodes = unique(reshape(connectivity,1,[]));
+                general.local.body{iBody}.elementData(elementBlockCount,:) = [nElements, nodesPerElement, elementType];
+
+
+                elementPrepPath = general.dirs.workingDir + general.dirs.prepPathE + num2str(elementBlockCount) + general.files.matExt;
+
+                dataLabels = [general.varNames.elementIdx, general.varNames.connectivity];
+                inputData.connectivity = connectivity;
+                inputData.elementIdx = elementIdx;
+            
+                saveToMat(elementPrepPath, dataLabels, inputData, false);
+            end
+            
+            function readNode()
+                %readNode - Reads node coordinate data and transforms the data ready for saving
+                %
+                % Syntax: [dataLabels, inputData] = readNode()
+
+                
+                maxNodes = uint32(str2double(blockData(end).fields));
+                
+                fgetl(fileId); %increment the cursor to node block
+                
+                general.local.maxNodes = maxNodes;
+            
+                coords = zeros([maxNodes, 3], 'single');
+                nodeIdx = zeros([maxNodes, 1], 'uint32');
+            
+                tmp = textscan(fileId, const.format.nodes,'MultipleDelimsAsOne', true, 'CollectOutput', true);
+                endIdx = length(tmp{1, 1}(:));
+            
+                nodeIdx(1:endIdx) = tmp{1}(1:endIdx);
+                coords(1:endIdx, :) = tmp{2:end}(1:endIdx, :);
+
+                nodePrepPath = general.dirs.workingDir + general.dirs.prepPathN + general.files.nodes;
+                generalConstPath = general.dirs.workingDir + general.path.general;
+
+                dataLabels = [general.varNames.nodeIdx, general.varNames.coords];
+                inputData.nodeIdx = nodeIdx;
+                inputData.coords = coords;
+            
+                saveToMat(nodePrepPath, dataLabels, inputData, false);            
+            end
+            
+        end   
+        
+        function varargout = readNodalSol()
+            %readNodalSol - reads in the stress data from nodalSolution.txt
+            %
+            % Syntax: varargout = readNodalSol()
+            fileName = general.dirs.simulationDir + const.files.nodalSol;
+    
+            stressPrepPath = general.dirs.workingDir + general.dirs.prepPathS + general.files.stress;
+        
+            fileId = fopen(fileName,'rt');
+            str = convertCharsToStrings(fgetl(fileId));
+            lineTest = true;
+
+            stress = zeros([general.local.maxNodes, 6], 'single');
+            nodalStressIdx = zeros([general.local.maxNodes, 1], 'uint32');
+            
+            while lineTest
+                [match, nonMatch] = regexp(str, const.regex.nodeSolBlock, 'names', 'noemptymatch');
+                if ~isempty(match)
+                    if length(match)>1 && ~isempty(match{1,2}(:))
+                        tmp = textscan(fileId, const.format.nodalStress,'MultipleDelimsAsOne', true, 'CollectOutput', true);
+                        lineTest = false;
+                    end
+                end
+                str = convertCharsToStrings(fgetl(fileId));
+            end
+
+            endIdx = length(tmp{1}(1:end, 1));
+
+            nodalStressIdx(1:endIdx) = tmp{1}(1:endIdx);
+            stress(1:endIdx, :) = tmp{2:end}(1:endIdx, :);
+
+            dataLabels = [general.varNames.nodalStressIdx, general.varNames.stress];
+            inputData.stress = stress;
+            inputData.nodalStressIdx = nodalStressIdx;
+
+            saveToMat(stressPrepPath, dataLabels, inputData, false);
+        end
+
+        dataLabels = [general.varNames.general];
+        inputData.general = general;
+        generalOutPath = general.general.dirs.workingDir + general.path.general;
+
+        saveToMat(generalOutPath, dataLabels, inputData, false);
+    end
 end
 
 function generateDirectories(general)
@@ -43,110 +203,6 @@ function generateDirectories(general)
         [a, b] = mkdir(general.dirs.workingDir + general.dirs.(fn{k}));
     end
 end
-
-function [] = readAnsys(general)
-    %readAnsys - ANSYS specific import
-    %
-    % Syntax: [output] = readAnsys(fileId)
-    ANSYS = "ANSYS";
-    pathSep = general.pathSep;
-    [const] = loadConstants(ANSYS, pathSep);
-
-    generateDirectories(general);
-
-    readDsDat()
-    readNodalSol()
-    generateData(general)
- 
-
-    function varargout = readDsDat()
-        %readDsDat - Imports data from ds.dat file.
-        %
-        % Syntax: varargout = readDsDat()
-        fileName = general.dirs.simulationDir + const.files.ds;
-
-        regex = const.regex;
-    
-        fileId = fopen(fileName,'rt');
-        str = fgetl(fileId);
-        prevStr = "";
-        elementBlockCount = 1;
-        blockElementTypeMapping = {};
-    
-        while ~atEnd(str, regex.elemEnd)
-            [match, nonMatch] = regexp(str, regex.block, 'names', 'split');
-            if ~isempty(match)
-                [blockData, nonMatch] = regexp(nonMatch{2}, regex.fields, 'names', 'split');
-                switch match.fieldType
-                    case "n"
-                        readNode(fileId, blockData, const, general);
-                    case "e"
-                        [elementType, nonMatch] = regexp(prevStr, regex.elementType, 'names', 'split');
-                        elementType = uint32(str2double(elementType.elementType));
-                        readElement(fileId, const, general, blockData, elementType, elementBlockCount);
-                        elementBlockCount = elementBlockCount + 1;
-                    case "end"
-                        continue
-                end
-            end
-            prevStr = str;
-            str = fgetl(fileId);
-        end
-        fclose(fileId);
-        
-    end   
-    
-    function varargout = readNodalSol()
-        %readNodalSol - reads in the stress data from nodalSolution.txt
-        %
-        % Syntax: varargout = readNodalSol()
-        fileName = general.dirs.simulationDir + const.files.nodalSol;
-        
-        dirs = general.dirs;
-        fmt = const.format;
-        regex = const.regex;
-
-        stressPrepPath = dirs.workingDir + dirs.prepPathS + general.files.stress;
-    
-        fileId = fopen(fileName,'rt');
-        str = convertCharsToStrings(fgetl(fileId));
-        lineTest = true;
-
-        maxNodes = getData(general, "g", general.varNames.maxNodes);
-
-        stress = zeros([maxNodes, 6], 'single');
-        nodalStressIdx = zeros([maxNodes, 1], 'uint32');
-        
-        while lineTest
-            [match, nonMatch] = regexp(str, regex.nodeSolBlock, 'names', 'noemptymatch');
-            if ~isempty(match)
-                if length(match)>1 && ~isempty(match{1,2}(:))
-                    tmp = textscan(fileId, fmt.nodalStress,'MultipleDelimsAsOne', true, 'CollectOutput', true);
-                    lineTest = false;
-                end
-            end
-            str = convertCharsToStrings(fgetl(fileId));
-        end
-
-        endIdx = length(tmp{1}(1:end, 1));
-
-        nodalStressIdx(1:endIdx) = tmp{1}(1:endIdx);
-        stress(1:endIdx, :) = tmp{2:end}(1:endIdx, :);
-
-        dataLabels = [general.varNames.nodalStressIdx, general.varNames.stress];
-        inputData.stress = stress;
-        inputData.nodalStressIdx = nodalStressIdx;
-
-        saveToMat(stressPrepPath, dataLabels, inputData, false);
-    end
-
-    dataLabels = [general.varNames.general];
-    inputData.general = general;
-    generalOutPath = general.dirs.workingDir + general.path.general;
-
-    saveToMat(generalOutPath, dataLabels, inputData, false);
-end
-
 function endElements = atEnd(str, pat)
     %atEnd - Returns true if at the end of the elements. False otherwise.
     %
@@ -164,84 +220,7 @@ function endElements = atEnd(str, pat)
     end
 end
 
-function readElement(fileId, const, general, blockData, elementType, elementBlockCount)
-    %readElement - Reads element connectivity data and transforms the data ready for saving
-    %
-    % Syntax: [dataLabels, inputData] = readElement()
-    %TODO: Write function to handle elements with more than 8 nodes.
-    dirs = general.dirs;
-    fmt = const.format;
 
-    elementPrepPath = dirs.workingDir + dirs.prepPathE + num2str(elementBlockCount) + general.files.matExt;
-    generalConstPath = dirs.workingDir + general.path.general;
-    [nLines] = getNLines(fileId, 2);
-
-    elementFields = uint32(str2double(split(strtrim(nLines(2,:)))));
-
-    nElements = uint32(str2double(blockData(end).fields));
-
-    if ~isempty([blockData.solid])
-        nodesPerElement = elementFields(9);
-    else
-        nodesPerElement = uint32(str2double(blockData(1).fields));
-    end
-
-    connectivity = zeros([nElements,nodesPerElement], 'uint32');
-    elementIdx = zeros([nElements,1],'uint32');
-    
-    tmp = textscan(fileId, fmt.elements, 'MultipleDelimsAsOne',true, 'CollectOutput', true);%Read in all data
-
-    connectivity(:, :) = [elementFields(12:12 + nodesPerElement - 1)'; tmp{:}(1:end-1, 12:12 + nodesPerElement - 1)];%Read to preallocated array
-    elementIdx(:, :) = [elementFields(11); tmp{:}(1:end-1, 11)];
-
-    dataLabels = [general.varNames.elementIdx, general.varNames.connectivity];
-    inputData.connectivity = connectivity;
-    inputData.elementIdx = elementIdx;
-
-    saveToMat(elementPrepPath, dataLabels, inputData, false);
-    
-    dataLabels = [general.varNames.elementData];
-
-    general.elementData = [nElements, nodesPerElement, elementType];
-   
-    saveToMat(generalConstPath, dataLabels, general, true);
-end
-
-function readNode(fileId, blockData, const, general)
-    %readNode - Reads node coordinate data and transforms the data ready for saving
-    %
-    % Syntax: [dataLabels, inputData] = readNode()
-    dirs = general.dirs;
-    fmt = const.format;
-    nodePrepPath = dirs.workingDir + dirs.prepPathN + general.files.nodes;
-    generalConstPath = dirs.workingDir + general.path.general;
-    maxNodes = uint32(str2double(blockData(end).fields));
-    
-    fgetl(fileId); %increment the cursor to node block
-    
-    general.local.maxNodes = maxNodes;
-
-    coords = zeros([maxNodes, 3], 'single');
-    nodeIdx = zeros([maxNodes, 1], 'uint32');
-
-    tmp = textscan(fileId, fmt.nodes,'MultipleDelimsAsOne', true, 'CollectOutput', true);
-    endIdx = length(tmp{1, 1}(:));
-
-    nodeIdx(1:endIdx) = tmp{1}(1:endIdx);
-    coords(1:endIdx, :) = tmp{2:end}(1:endIdx, :);
-
-    dataLabels = [general.varNames.nodeIdx, general.varNames.coords];
-    inputData.nodeIdx = nodeIdx;
-    inputData.coords = coords;
-
-    saveToMat(nodePrepPath, dataLabels, inputData, false);
-
-    dataLabels = [general.varNames.maxNodes];
-    general.maxNodes = maxNodes;
-    
-    saveToMat(generalConstPath, dataLabels, general, false);
-
-end
 
 function [retVal] = nodeOrElement(caseType)
     switch caseType
@@ -351,9 +330,9 @@ end
 
 function generateData(general)
 
-    elementData = getData(general, "g", general.varNames.elementData);
+    elementData = general.local.body{:}.elementData;
     % nodeIdx = getData(general, "n", general.varNames.nodeIdx);
-    maxNodes = getData(general, "g", general.varNames.maxNodes);
+    maxNodes = general.local.maxNodes;
     nBodies = size(elementData, 1);
     maxElements = 8;
     nodalConnectivity = zeros(maxNodes, maxElements);
@@ -368,14 +347,11 @@ function generateData(general)
 
         
         [~, ind, idx] = unique(sort(bodyFaceArray, 2), 'rows');
-        a = histcounts(idx, length(ind)) < 2;
-        tmp = bodyFaceArray(ind,:);
-        b = tmp(a,:);
-        plotFaces(general, b)
-        % duplicate indices
-        duplicate_ind = setdiff(1:size(bodyFaceArray, 1), ind);
-        % duplicate values
-        duplicate_value = bodyFaceArray(duplicate_ind, 3);
+        uFaceIdx = histcounts(idx, length(ind)) < 2;
+        filteredFaces = bodyFaceArray(ind,:);
+        outerFaces = filteredFaces(uFaceIdx,:);
+        outerFaceCoords = getOuterFaceCoods(general, outerFaces);
+        plotFaces(general, outerFaceCoords)
         
         [~, uidx, b] = unique(sort(bodyFaceArray, 2), 'rows');
         bodySurfaceFaces = bodyFaceArray(uidx,:);
@@ -395,21 +371,23 @@ function [coords] = getCoords(general, nodeNumber)
     %
     % Long description
     nodes = matfile(general.dirs.workingDir + general.path.nodes);
-    idx = nodes.nodeIdx(nodeNumber, :);
-    coords = nodes.coords(idx,:);
+    idx = nodes.nodeIdx(min(nodeNumber):max(nodeNumber), :);
+    [~,~, IC] = intersect(nodeNumber, idx);
+    coords = nodes.coords(min(IC):max(IC), :);
+    coords = coords(IC,:);
 end
 
-function [faceCoords] =  getOuterFaces(general, faceArray)
+function [outerFaceCoords] =  getOuterFaceCoods(general, faceArray)
     % TODO - Save face coords to matfile
     uNodes = reshape(faceArray,[],1);
     [uNodes, ~, ic] = unique(uNodes);
-    coords = getCoords(general, uNodes);
-    faceCoords = coords(ic, :);
+    outerFaceCoords = getCoords(general, uNodes);
+    % outerFaceCoords = coords(ic, :);
     [nRows, nCols] = size(faceArray);
-    faceCoords = reshape(faceCoords, nRows, nCols,[]);
-    faceCoords = permute(faceCoords, [2 1 3]);
+    outerFaceCoords = reshape(outerFaceCoords, nRows, nCols,[]);
+    outerFaceCoords = permute(outerFaceCoords, [2 1 3]);
     % TODO - It is currently element 185 specific - make general. i.e. I'm making triangles from the 4 nodes that define the face. Needs to be adapted for elements with more or less nodes.
-    generateLocatingVariables(general, [faceCoords([1:3], :,:), faceCoords([1,3,4], :,:)]);
+    generateLocatingVariables(general, [outerFaceCoords([1:3], :,:), outerFaceCoords([1,3,4], :,:)]);
 end
 
 
@@ -461,12 +439,12 @@ function plotFaces(general, faceArray)
     %
     % Syntax: plotFaces(faceArray)
 
-    faceCoords = getOuterFaces(general, faceArray);
+    outerFaceCoords = getOuterFaceCoods(general, faceArray);
 
-    triangulatedFaceCoords = [faceCoords([1:3], :,:), faceCoords([1,3,4], :,:)];
+    triangulatedFaceCoords = [outerFaceCoords([1:3], :,:), outerFaceCoords([1,3,4], :,:)];
     hold on
 
-    patch('XData',faceCoords(:, :, 1),'YData',faceCoords(:, :, 2),'ZData',faceCoords(:, :, 3), 'EdgeColor','black','FaceColor','none', 'EdgeAlpha', 0.3)
+    patch('XData',outerFaceCoords(:, :, 1),'YData',outerFaceCoords(:, :, 2),'ZData',outerFaceCoords(:, :, 3), 'EdgeColor','black','FaceColor','none', 'EdgeAlpha', 0.3)
 
     testPoint = [1 1 1];
 

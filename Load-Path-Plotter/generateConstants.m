@@ -10,7 +10,7 @@ ANSYS.format.nodes = '%u32%f32%f32%f32';
 ANSYS.format.elements = repmat('%u32',[1,19]);
 ANSYS.format.nodalStress = '%u32%f32%f32%f32%f32%f32%f32';
 
-ANSYS.regex.elementType = "(?:et,)\d*,(?<elementType>\d+)";
+ANSYS.regex.elementBlockData = "(?:et,)(?<iBody>\d+),(?<elementType>\d+)";
 ANSYS.regex.block = "(?<fieldType>n|e)block";
 ANSYS.regex.fields = "(?<fields>\d+)|(?<solid>solid)";
 ANSYS.regex.elemEnd = "/wb,(?<sectionKey>\w+),(?<context>\w+)";

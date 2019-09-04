@@ -2,9 +2,9 @@ function Run_Solve_loadpath3D(general)
 %% ********************  House Keeping   ******************************
 tic
 % Closes previously opened waitbars
-    pathSeparator = general.pathSep
+    pathSeparator = general.local.pathSep;
 
-    nNodes = getData(general, "g", general.varNames.maxNodes);
+    nNodes = general.local.maxNodes;
     
     closeWaitBar()
 
@@ -16,9 +16,9 @@ tic
     
     %X, Y, Z and Intensity information. Can be amended later if more data is needed to be gathered. This sets the preallocated memory size.
     DATA_DIMENSION = 4;
-    OUTPUT_DIR = general.dirs.workingDir + pathSeparator + general.dirs.outPath;
+    OUTPUT_DIR = general.dirs.workingDir + general.dirs.outPath;
     mkdir(OUTPUT_DIR);
-    thisOutputDir = strjoin([OUTPUT_DIR pathSeparator datestr(now,'yy_mm_dd_HH_MM_SS') ' - ' general.constants.modelName],'')
+    thisOutputDir = strjoin([OUTPUT_DIR datestr(now,'yy_mm_dd_HH_MM_SS') ' - ' general.constants.modelName],'')
     mkdir(thisOutputDir);
     matPathFileName = strjoin(['_pathData_' modelDataName '.mat'],'')
     matPathFullFileName = strjoin([thisOutputDir pathSeparator matPathFileName],'');
@@ -54,96 +54,96 @@ tic
 
     outputPath = strjoin([general.dirs.workingDir, pathSeparator,'Path Data', pathSeparator, 'data_', modelDataName,'.mat'], '');
 
-    if ~exist(outputPath, 'file') || general.constants.recompute
+    % if ~exist(outputPath, 'file') || general.constants.recompute
 
-        fprintf('New model or user nominated to general.constants.recompute data. Starting now.\n')
-        waitbar(CURRENT_TIME/totalTime,waitBar,sprintf('Computing Initial Data'))
+    %     fprintf('New model or user nominated to general.constants.recompute data. Starting now.\n')
+    %     waitbar(CURRENT_TIME/totalTime,waitBar,sprintf('Computing Initial Data'))
 
-        %Nodal Information module
-        [StressData, nNodes] = Input_nodeDat(general.dirs.simulationDir, nNodes);
-        CURRENT_TIME = CURRENT_TIME + DATA_READ_TIME/3;
-        waitbar(CURRENT_TIME/totalTime,waitBar,sprintf('Computing Initial Data'))
-        fprintf('Nodal information complete. Starting stress population.\n')
+    %     %Nodal Information module
+    %     [StressData, nNodes] = Input_nodeDat(general.dirs.simulationDir, nNodes);
+    %     CURRENT_TIME = CURRENT_TIME + DATA_READ_TIME/3;
+    %     waitbar(CURRENT_TIME/totalTime,waitBar,sprintf('Computing Initial Data'))
+    %     fprintf('Nodal information complete. Starting stress population.\n')
 
-        %Node data module
-        [nodes] = Input_NodeDatRead(general.dirs.simulationDir, StressData, nNodes);
-        CURRENT_TIME = CURRENT_TIME + DATA_READ_TIME/3;
-        waitbar(CURRENT_TIME/totalTime,waitBar,sprintf('Computing Initial Data'))
-        fprintf('Nodal stresses populated. Element generation beginning.\n')
+    %     %Node data module
+    %     [nodes] = Input_NodeDatRead(general.dirs.simulationDir, StressData, nNodes);
+    %     CURRENT_TIME = CURRENT_TIME + DATA_READ_TIME/3;
+    %     waitbar(CURRENT_TIME/totalTime,waitBar,sprintf('Computing Initial Data'))
+    %     fprintf('Nodal stresses populated. Element generation beginning.\n')
 
-        %Element data and main data structure generation -  %DK read element connectivity is read
-        [nodePerEl, PartArr] = Input_datread(general.dirs.simulationDir,nodes); 
-        CURRENT_TIME = CURRENT_TIME + DATA_READ_TIME/3;
+    %     %Element data and main data structure generation -  %DK read element connectivity is read
+    %     [nodePerEl, PartArr] = Input_datread(general.dirs.simulationDir,nodes); 
+    %     CURRENT_TIME = CURRENT_TIME + DATA_READ_TIME/3;
 
-        fprintf('Elements constructed, directories being created and data being saved.\n')
-        eName = 'Path Data';
-        dName = char(general.dirs.workingDir);
-        mkdir(dName,eName);
-        save(strjoin([dName pathSeparator eName pathSeparator 'data_' modelDataName '.mat'],''),'PartArr','nodes', 'nodePerEl');
-    %% ******************  Define quadrilateral faces of elements **************************
-    %% ******************  and check face normal is positive pointing out  **************
-    %% ******************  Only works for Hex8 Bricks
+    %     fprintf('Elements constructed, directories being created and data being saved.\n')
+    %     eName = 'Path Data';
+    %     dName = char(general.dirs.workingDir);
+    %     mkdir(dName,eName);
+    %     save(strjoin([dName pathSeparator eName pathSeparator 'data_' modelDataName '.mat'],''),'PartArr','nodes', 'nodePerEl');
+    % %% ******************  Define quadrilateral faces of elements **************************
+    % %% ******************  and check face normal is positive pointing out  **************
+    % %% ******************  Only works for Hex8 Bricks
 
-        numParts = 1;
-        [irow,numel] = size(PartArr(numParts).elements);
+    %     numParts = 1;
+    %     [irow,numel] = size(PartArr(numParts).elements);
 
-        %% ******************  If nPaths == 0 Define Seeds based on maximum pointing vector **************************
-        %% ******************  Defines seeds at peak of pulse for transient solution          **************************
-        if nPaths == 0
-            %Set up list of element pointing vectors
-            %Determine x-coordinate for maximum magnitude of pointing vector 
-            %to define peak of pulse. Set seeds on all elements with XCG
-            %equal to that value
-            VectorMag = zeros(1,numel);
-            for k = 1:numel
-                elnods = PartArr(1).elements(k).nodenums;
-                PointVec = zeros(1,3);
-                for kk = 1,8;
-                    kkk = elnods(kk);
-                    if general.constants.dimension == 'X'
-                        PointVec(1) = PointVec(1) + nodes(kkk).xStress/8.0;
-                        PointVec(2) = PointVec(2) + nodes(kkk).xyStress/8.0;
-                        PointVec(3) = PointVec(3) + nodes(kkk).xzStress/8.0;
-                    end
-                    if general.constants.dimension == 'Y'
-                        PointVec(1) = PointVec(1) + nodes(kkk).xyStress/8.0;
-                        PointVec(2) = PointVec(2) + nodes(kkk).yStress/8.0;
-                        PointVec(3) = PointVec(3) + nodes(kkk).yzStress/8.0;
-                    end
-                    if general.constants.dimension == 'Z'
-                        PointVec(1) = PointVec(1) + nodes(kkk).xzStress/8.0;
-                        PointVec(2) = PointVec(2) + nodes(kkk).yzStress/8.0;
-                        PointVec(3) = PointVec(3) + nodes(kkk).zStress/8.0;
-                    end
-                end
-                VectorMag(k) = norm(PointVec);
-            end
-            [VectorSort, IX] = sort(VectorMag);
-            k=1;
-            kk = IX(numel-k+1);
-            xs = CGXYZ(1,kk);
-            ys = CGXYZ(2,kk);
-            zs = CGXYZ(3,kk);
-            nSeeds = 0;
-            for k = 1:numel
-                if abs(CGXYZ(1,k) - xs) < 0.1
-                    nSeeds = nSeeds + 1;
-                    xSeed(nSeeds) = CGXYZ(1,k);
-                    ySeed(nSeeds) = CGXYZ(2,k);
-                    zSeed(nSeeds) = CGXYZ(3,k);
-                end
-            end
-            nPaths = nSeeds;
-        end
-    else
-        %This loads data if the preprocessign has already been done.
-        fprintf('Previous model detected, loading data.\n')
-        waitbar(CURRENT_TIME/totalTime,waitBar,sprintf('Loading Data'))
-        load(strjoin([general.dirs.workingDir pathSeparator 'Path Data' pathSeparator 'data_' modelDataName,'.mat'],''));
-        CURRENT_TIME = CURRENT_TIME + DATA_READ_TIME;
+    %     %% ******************  If nPaths == 0 Define Seeds based on maximum pointing vector **************************
+    %     %% ******************  Defines seeds at peak of pulse for transient solution          **************************
+    %     if nPaths == 0
+    %         %Set up list of element pointing vectors
+    %         %Determine x-coordinate for maximum magnitude of pointing vector 
+    %         %to define peak of pulse. Set seeds on all elements with XCG
+    %         %equal to that value
+    %         VectorMag = zeros(1,numel);
+    %         for k = 1:numel
+    %             elnods = PartArr(1).elements(k).nodenums;
+    %             PointVec = zeros(1,3);
+    %             for kk = 1,8;
+    %                 kkk = elnods(kk);
+    %                 if general.constants.dimension == 'X'
+    %                     PointVec(1) = PointVec(1) + nodes(kkk).xStress/8.0;
+    %                     PointVec(2) = PointVec(2) + nodes(kkk).xyStress/8.0;
+    %                     PointVec(3) = PointVec(3) + nodes(kkk).xzStress/8.0;
+    %                 end
+    %                 if general.constants.dimension == 'Y'
+    %                     PointVec(1) = PointVec(1) + nodes(kkk).xyStress/8.0;
+    %                     PointVec(2) = PointVec(2) + nodes(kkk).yStress/8.0;
+    %                     PointVec(3) = PointVec(3) + nodes(kkk).yzStress/8.0;
+    %                 end
+    %                 if general.constants.dimension == 'Z'
+    %                     PointVec(1) = PointVec(1) + nodes(kkk).xzStress/8.0;
+    %                     PointVec(2) = PointVec(2) + nodes(kkk).yzStress/8.0;
+    %                     PointVec(3) = PointVec(3) + nodes(kkk).zStress/8.0;
+    %                 end
+    %             end
+    %             VectorMag(k) = norm(PointVec);
+    %         end
+    %         [VectorSort, IX] = sort(VectorMag);
+    %         k=1;
+    %         kk = IX(numel-k+1);
+    %         xs = CGXYZ(1,kk);
+    %         ys = CGXYZ(2,kk);
+    %         zs = CGXYZ(3,kk);
+    %         nSeeds = 0;
+    %         for k = 1:numel
+    %             if abs(CGXYZ(1,k) - xs) < 0.1
+    %                 nSeeds = nSeeds + 1;
+    %                 xSeed(nSeeds) = CGXYZ(1,k);
+    %                 ySeed(nSeeds) = CGXYZ(2,k);
+    %                 zSeed(nSeeds) = CGXYZ(3,k);
+    %             end
+    %         end
+    %         nPaths = nSeeds;
+    %     end
+    % else
+    %     %This loads data if the preprocessign has already been done.
+    %     fprintf('Previous model detected, loading data.\n')
+    %     waitbar(CURRENT_TIME/totalTime,waitBar,sprintf('Loading Data'))
+    %     load(strjoin([general.dirs.workingDir pathSeparator 'Path Data' pathSeparator 'data_' modelDataName,'.mat'],''));
+    %     CURRENT_TIME = CURRENT_TIME + DATA_READ_TIME;
 
-        fprintf('Data loaded. Starting path computation.\n')
-    end
+    %     fprintf('Data loaded. Starting path computation.\n')
+    % end
         %******************** Waitbar and Status Update ***************************
 
     if getappdata(waitBar,'canceling')
@@ -162,15 +162,9 @@ tic
             myCluster = parcluster('local');
             nWorkers = myCluster.NumWorkers;
             nPathsPerWorker = ceil(nPaths/nWorkers);
-            % spmd
-            %     myFname = tempname(); % each worker gets a unique filename
-            %     myMatFile = matfile(myFname, 'Writable', true);
-            %     myMatFile.pathData = zeros(2*general.constants.pathLength, nPathsPerWorker, DATA_DIMENSION, 'single')
-            %     myMatFile.pathIndex = int8(0)
-            % end
 
             % myMatfileConstant = general.constants.parallel.pool.Constant(myMatFile);
-            %2D removed, pending future re-integration. Need to separate general.constants.parallel and single core processing to functions to clean main program.
+            %2D removed, pending future re-integration. Need to separate parallel and single core processing to functions to clean main program.
                 parfor (k = 1:nPaths, nWorkers)
                     fprintf('Starting path %k\n',k)
                     warning('off','MATLAB:scatteredInterpolant:DupPtsAvValuesWarnId');
@@ -181,7 +175,7 @@ tic
 
                     reverse_path = false;
                     [x, y, z, intense] = RunLibrary_rungekuttaNatInter3D(...
-                    general, xSeed(k),ySeed(k),zSeed(k), PartArr, reverse_path,waitBar);
+                    general, xSeed(k),ySeed(k),zSeed(k), reverse_path,waitBar);
                     if isempty(x)
                         fprintf('Path %k unsuccessful\n',k)
                         continue
@@ -189,7 +183,7 @@ tic
                     iPathMatFile.pathData(1:general.constants.pathLength,:) = [x; y; z; intense]';
                     reverse_path = true;
                      [x, y, z, intense ] = RunLibrary_rungekuttaNatInter3D(...
-                        general, xSeed(k),ySeed(k),zSeed(k), PartArr, reverse_path, waitBar);
+                        general, xSeed(k),ySeed(k),zSeed(k), reverse_path, waitBar);
                     [mdk,ndk] = size(intense);
                     iPathMatFile.pathData(general.constants.pathLength+1:2*general.constants.pathLength,:) = [dkx; dky; dkz; dkintense]';
                     fprintf('Path %k done\n',k);
@@ -210,7 +204,7 @@ tic
                 warning('off','MATLAB:scatteredInterpolant:DupPtsAvValuesWarnId');
                 reverse_path = false;
                 [dkx, dky, dkz, dkintense] = RunLibrary_rungekuttaNatInter3D(...
-                    general, xSeed(k),ySeed(k),zSeed(k), PartArr, reverse_path,waitBar);
+                    general, xSeed(k),ySeed(k),zSeed(k), reverse_path,waitBar);
                 if isempty(dkx)
                     fprintf('Path %k unsuccessful\n',k)
                     continue
@@ -255,7 +249,7 @@ tic
                 CURRENT_TIME = CURRENT_TIME + 1/nPaths *80/2;
                 reverse_path = true;
                 [dkx, dky, dkz, dkintense ] = RunLibrary_rungekuttaNatInter3D(...
-general, xSeed(k), ySeed(k), zSeed(k), PartArr, reverse_path, waitBar);
+general, xSeed(k), ySeed(k), zSeed(k), reverse_path, waitBar);
 
                 iPathMatFile.pathData(general.constants.pathLength+1:2*general.constants.pathLength,:) = [dkx; dky; dkz; dkintense]';
                 %Next block added by dk to only plot peak of pulse

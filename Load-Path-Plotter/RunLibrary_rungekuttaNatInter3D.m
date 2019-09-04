@@ -1,5 +1,5 @@
 function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(...
-    general, xseed,yseed,zseed, PartArr, ReversePath, wb)
+    general, xseed,yseed,zseed, ReversePath, wb)
 
     %p0 is initial seed point. Projection multiplier is used to 'jump' gaps
     %between parts in the model. It will project the path from onee part to
@@ -81,14 +81,12 @@ function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(.
         p0 = p0 + 1/6 * (dp1 + 2*dp2 + 2*dp3 + dp4);
 
 	    %Locate element that the point is inside
-        [in, new_Element] = point_in_element(p0, PartArr);
+        [in, new_Element] = point_in_element(p0, utilities);
 
         %If the point is outside the local radius, we attempt to find it
         %globablly. The path is projected along its last vector in an
         %attempt to get it to 'land' in another element for the case where
         %its in a small gap between elements.
-
-        % [in, p0, Element] = projection(in, p0, Element)
 
         if in && new_Element(1).ElementNo ~= Element(1).ElementNo
             [F, Fs1, Fs2] = setInterpFunc(Element,general.constants.pathDir, ReversePath);
@@ -123,6 +121,7 @@ end
 function [F, Fs1, Fs2] = setInterpFunc(Element, pathDir, ReversePath)
     %Natural interpolation method is used to form a stress function to then
     %compute the paths.
+    % TODO: - How many nodes do i need?
     surr_elements = RunLibrary_surrounding_elemnts(Element, Element);
     nodes = unique([surr_elements(:).nodes]);
     coordx = [nodes(:).xCoordinate]';
@@ -230,4 +229,12 @@ function [in] = triIntersect(point, utilities)
     if sum((t > 0.0 & (s + t) > 1.0) & (r > 0) & (s > 0.0) & (s < 1.0)) > 0
         in = true;
     end
+end
+
+function [varagout] = getInterpolationData(point, general)
+    %getInterpolationData - Description
+    %
+    % Syntax: [varagout] = getInterpolationData(point, general)
+
+    
 end
