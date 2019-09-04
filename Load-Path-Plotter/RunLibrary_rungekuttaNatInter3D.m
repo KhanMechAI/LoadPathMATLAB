@@ -1,11 +1,14 @@
 function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(...
-    xseed,yseed,zseed, PartArr, pathDir,maxPathLength, ReversePath,...
-    step_size, wb)
+    general, xseed,yseed,zseed, PartArr, ReversePath, wb)
 
     %p0 is initial seed point. Projection multiplier is used to 'jump' gaps
     %between parts in the model. It will project the path from onee part to
     %another. This procedure is a big source of time, some thought needs to
     %be given to how to optimise this routine.
+
+    utilities = getData(general, "u");
+    % [general] = getData(general, dataClass, varargin)
+
     projectionMultiplier = 2;
     p0 = [xseed; yseed; zseed];
 
@@ -15,7 +18,7 @@ function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(.
     Vy =@(stress, shearxy, shearyz) [shearxy; stress; shearyz];
     Vz =@(stress, shearxz, shearyz) [shearxz; shearyz; stress];
 
-    switch lower(pathDir)
+    switch lower(general.constants.pathDir)
         case 'x'
             V = Vx;
         case 'y'
@@ -25,11 +28,11 @@ function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(.
     end
     %Locate the seed point in the model globally.
 
-    [in, Element] = point_in_element(p0, PartArr);
+    [in, Element] = point_in_element(p0, utilities);
 
     if in
         %Get and set stress function
-        [F, Fs1, Fs2] = setInterpFunc(Element, pathDir, ReversePath);
+        [F, Fs1, Fs2] = setInterpFunc(Element, general.constants.pathDir, ReversePath);
     else
         fprintf('Seed Point (%f, %f, %f) not in solution domain\n', xseed, yseed, zseed);
         x_path = [];
@@ -39,12 +42,12 @@ function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(.
         return
     end
     %Populating with NaN's prevents plotting errors later.
-    p = NaN(3,maxPathLength,'double');
-    intensity = NaN(1,maxPathLength,'double');
+    p = NaN(3,general.constants.pathLength,'double');
+    intensity = NaN(1,general.constants.pathLength,'double');
     w = 1;
     element_change = false;
 
-    while w <= maxPathLength && in ~= false
+    while w <= general.constants.pathLength && in ~= false
         %Terminate program if cancel button is pressed
         if getappdata(wb,'canceling')
             delete(wb)
@@ -64,7 +67,7 @@ function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(.
         %Calculate new points:
 
         %Runge-Kutta
-        dp1 = V(stress, shear1, shear2)*step_size/intensity(w);
+        dp1 = V(stress, shear1, shear2)*general.constants.stepSize/intensity(w);
         p1 = p0 + dp1;
 
         dp2 = stress_interp(p1);
@@ -88,7 +91,7 @@ function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(.
         % [in, p0, Element] = projection(in, p0, Element)
 
         if in && new_Element(1).ElementNo ~= Element(1).ElementNo
-            [F, Fs1, Fs2] = setInterpFunc(Element,pathDir, ReversePath);
+            [F, Fs1, Fs2] = setInterpFunc(Element,general.constants.pathDir, ReversePath);
         end
 
         Element = new_Element;
@@ -114,7 +117,7 @@ function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(.
         stress = F(p(1), p(2), p(3));
         shear1 = Fs1(p(1), p(2), p(3));
         shear2 = Fs2(p(1), p(2), p(3));
-        d_point =  V(stress, shear1, shear2)*step_size/intensity(w);
+        d_point =  V(stress, shear1, shear2)*general.constants.stepSize/intensity(w);
     end
 end
 function [F, Fs1, Fs2] = setInterpFunc(Element, pathDir, ReversePath)
@@ -126,7 +129,7 @@ function [F, Fs1, Fs2] = setInterpFunc(Element, pathDir, ReversePath)
     coordy = [nodes(:).yCoordinate]';
     coordz = [nodes(:).zCoordinate]';
 
-    switch pathDir
+    switch general.constants.pathDir
         case 'X'
             stress_tensor = [[nodes(:).xStress]', [nodes(:).xyStress]', [nodes(:).xzStress]'];
         case 'Y'
@@ -145,9 +148,9 @@ function [F, Fs1, Fs2] = setInterpFunc(Element, pathDir, ReversePath)
     end
 end
 
-function [varargout] = point_in_element(p0, PartArr)
-    in_test = ~any(dot(PartArr.face_normals,-PartArr.face_centroids + p0,1)>0,2);
-    in = any(in_test);
+function [varargout] = point_in_element(p0, utilities)
+    in_test = triIntersect(p0, utilities)
+    in = in_test;
     Element = PartArr(1).elements(in_test);
     varargout = {in, Element};
 end
@@ -166,4 +169,65 @@ function [varargout] = projection(in, p0, Element)
         end
     end
     varargout = {in, p0, Element};
+end
+function [loadedVar] = getData(general, dataClass, varargin)
+    if length(varargin) > 0
+        varToLoad = varargin{1,1};
+        if nargin > 3
+            body = string(varargin{1,2});
+        end
+    end
+    switch dataClass
+        case "e"
+            curDir = general.dirs.workingDir + general.dirs.prepPathE...
+                     + body + general.files.matExt;
+        case "n"
+            curDir = general.dirs.workingDir + general.path.nodes;
+        case "s"
+            curDir = general.dirs.workingDir + general.path.stress;
+        case "g"
+            curDir = general.dirs.workingDir + general.path.general;
+        case "u"
+            curDir = general.dirs.workingDir + general.path.utilities;
+    end
+    if nargin < 3
+        loadedVar = load(curDir);
+    else
+        loadedVar = load(curDir, varToLoad);
+        loadedVar = loadedVar.(varToLoad);
+    end
+end
+function [in] = triIntersect(point, utilities)
+    %triIntersect - Description
+    %
+    % Syntax: [in] = triIntersect(point, faceVerticies)
+    %
+    % Adapted from: http://geomalgorithms.com/a06-_intersect-2.html
+
+    point = point';
+
+    in = false;
+
+    ray = utilities.infPoint - point;
+
+    w0 = point - utilities.V0;
+
+    a = -dot(utilities.n, w0, 2);
+    b = utilities.n * ray.';
+
+    r = a ./ b;
+
+    I = point + (r * ray);
+
+    w = I - utilities.V0;
+    wu = dot(w,utilities.u, 2);
+    wv = dot(w,utilities.v, 2);
+
+    s = (utilities.uv .* wv - utilities.vv .* wu) ./ utilities.D ;
+
+    t = (utilities.uv .* wu - utilities.uu .* wv) ./ utilities.D ;
+
+    if sum((t > 0.0 & (s + t) > 1.0) & (r > 0) & (s > 0.0) & (s < 1.0)) > 0
+        in = true;
+    end
 end

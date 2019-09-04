@@ -521,7 +521,7 @@ help_dialog_settings(h)
 function [retval] = sim_folder_check(sim_dir)
     retval = 1;
     
-    req_files = {'ds.dat','nodeInfo.txt','nodalSolution.txt'};
+    req_files = {'ds.dat','nodalSolution.txt'};
     
     if ~exist(sim_dir, 'dir')
         retval = 0;
@@ -606,24 +606,25 @@ function pushbutton12_Callback(hObject, eventdata, handles)
     %end   
     
     %dimension = handles.popupmenu1.String{handles.popupmenu1.Value};
-    dimension = '3D';
-    model_name = handles.edit3.String;
-    pulse = handles.checkbox4.Value;
-    parallel = handles.checkbox1.Value;
-    newPDF = handles.checkbox2.Value;
-    recompute = handles.checkbox3.Value;
-    sim_dir = string(handles.edit1.String);
-    seed_dir = string(handles.edit2.String);
-    save_dir = string(handles.edit4.String);
-    path_dir = string(handles.popupmenu2.String{handles.popupmenu2.Value});
-    step_size = handles.edit5.UserData;
-    path_length = handles.edit6.UserData;
-    plot_minimum_vector = handles.edit7.UserData;
-    plot_maximum_vector = handles.edit8.UserData;
-    Run_Solve_loadpath3D(...
-        sim_dir, seed_dir, save_dir, model_name,path_dir,...
-        pulse, parallel, newPDF,recompute, step_size, path_length,...
-        plot_minimum_vector, plot_maximum_vector);
+    pathSeparator = osPath()
+    [general] = loadConstants("general",pathSeparator);
+    general.pathSep = pathSeparator;
+    general.constants.dimension = '3D';
+    general.constants.modelName = handles.edit3.String;
+    general.constants.pulse = handles.checkbox4.Value;
+    general.constants.parallel = handles.checkbox1.Value;
+    general.constants.newPDF = handles.checkbox2.Value;
+    general.constants.recompute = handles.checkbox3.Value;
+    general.dirs.simulationDir = string(handles.edit1.String) + pathSeparator;
+    general.dirs.seedDir = string(handles.edit2.String);
+    general.dirs.workingDir = string(handles.edit4.String) + pathSeparator;
+    general.constants.pathDir = string(handles.popupmenu2.String{handles.popupmenu2.Value});
+    general.constants.stepSize = handles.edit5.UserData;
+    general.constants.pathLength = handles.edit6.UserData;
+    general.constants.plotMiniumVector = handles.edit7.UserData;
+    general.constants.plotMaximumVector = handles.edit8.UserData;
+    Run_Solve_loadpath3D(general);
+
 
 function edit5_Callback(hObject, eventdata, handles)
 % hObject    handle to edit5 (see GCBO)
