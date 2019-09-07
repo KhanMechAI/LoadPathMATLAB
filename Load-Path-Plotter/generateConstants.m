@@ -39,6 +39,8 @@ general.pathSep.PC = "\";
 
 general.varNames.elementIdx = "elementIdx";
 general.varNames.connectivity = "connectivity";
+general.varNames.nodalConnectivity = "nodalConnectivity";
+general.varNames.kdTreeNodes = "kdTreeNodes";
 general.varNames.elementData = "elementData";
 general.varNames.nodeIdx = "nodeIdx";
 general.varNames.coords = "coords";
@@ -58,6 +60,9 @@ general.varNames.D = "D";
 general.varNames.infPoint = "infPoint";
 
 general.constants.infPoint = [1e8 1e8 1e8];
+general.constants.stressTensor = [1 4 6;...
+                                4 2 5;...
+                                6 5 3];
 
 general.path.general = general.dirs.prepPathG + general.files.general;
 general.path.nodes = general.dirs.prepPathN + general.files.nodes;

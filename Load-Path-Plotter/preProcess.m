@@ -129,7 +129,7 @@ function [general] = preProcess(general)
                 
                 general.local.maxNodes = maxNodes;
             
-                coords = zeros([maxNodes, 3], 'single');
+                coords = NaN([maxNodes, 3], 'double');
                 nodeIdx = zeros([maxNodes, 1], 'uint32');
             
                 tmp = textscan(fileId, const.format.nodes,'MultipleDelimsAsOne', true, 'CollectOutput', true);
@@ -137,13 +137,14 @@ function [general] = preProcess(general)
             
                 nodeIdx(1:endIdx) = tmp{1}(1:endIdx);
                 coords(1:endIdx, :) = tmp{2:end}(1:endIdx, :);
+                kdTreeNodes = createns(coords,'NSMethod','kdtree');
+
 
                 nodePrepPath = general.dirs.workingDir + general.dirs.prepPathN + general.files.nodes;
-                generalConstPath = general.dirs.workingDir + general.path.general;
-
-                dataLabels = [general.varNames.nodeIdx, general.varNames.coords];
+                dataLabels = [general.varNames.nodeIdx, general.varNames.coords, general.varNames.kdTreeNodes];
                 inputData.nodeIdx = nodeIdx;
                 inputData.coords = coords;
+                inputData.kdTreeNodes = kdTreeNodes;
             
                 saveToMat(nodePrepPath, dataLabels, inputData, false);            
             end
@@ -162,7 +163,7 @@ function [general] = preProcess(general)
             str = convertCharsToStrings(fgetl(fileId));
             lineTest = true;
 
-            stress = zeros([general.local.maxNodes, 6], 'single');
+            stress = zeros([general.local.maxNodes, 6], 'double');
             nodalStressIdx = zeros([general.local.maxNodes, 1], 'uint32');
             
             while lineTest
@@ -190,7 +191,7 @@ function [general] = preProcess(general)
 
         dataLabels = [general.varNames.general];
         inputData.general = general;
-        generalOutPath = general.general.dirs.workingDir + general.path.general;
+        generalOutPath = general.dirs.workingDir + general.path.general;
 
         saveToMat(generalOutPath, dataLabels, inputData, false);
     end
@@ -336,13 +337,24 @@ function generateData(general)
     nBodies = size(elementData, 1);
     maxElements = 8;
     nodalConnectivity = zeros(maxNodes, maxElements);
-
+    nodeMatFile = matfile(general.dirs.workingDir + general.path.nodes)
+    elementInterpolationFunctions = cell(nBodies,1)
     for k = 1:nBodies
+        elementInterpolationFunctions{k} = cell(elementData(k,1),1)
         faceArray = faceDef(elementData(k,3));
         [nFaces, nNodesPerFace] = size(faceArray);
         bodyFaceArray = zeros([elementData(k,1)*nFaces, nNodesPerFace], 'uint32');
         connectivity = zeros([elementData(k,1), elementData(k,2)], 'uint32');
         connectivity(:)  = getData(general,"e", general.varNames.connectivity, k);
+        stress = getData(general,"s", general.varNames.stress);
+        
+        for j = 1:elementData(k,1)
+            localNodes = connectivity(j,:);
+            localNodeCoords = getCoords(nodeMatFile, localNodes);
+            localStress = stress(localNodes,:);
+            elementInterpolationFunctions{k, j} = interpFunction(localStress, localNodeCoords);
+        end
+
         bodyFaceArray(:) = reshape(connectivity(:,faceArray),elementData(k,1)*nFaces, nNodesPerFace);
 
         
@@ -361,28 +373,50 @@ function generateData(general)
         end
         nodalConnectivity( ~any(nodalConnectivity,2), : ) = [];  %rows
         nodalConnectivity( :, ~any(nodalConnectivity,1) ) = [];  %columns
+        
+        inputData.nodalConnectivity = nodalConnectivity;
+        dataLabels = [general.varNames.nodalConnectivity];
+        outPath = general.dirs.workingDir + general.path.nodes;
+        saveToMat(outPath, dataLabels, inputData, true);
     end
 end
 
-function [coords] = getCoords(general, nodeNumber)
+function generateElementData(general);
+
+end
+
+function [varargout] = interpFunction(stress, nodalCoordinates)
+    %Natural interpolation method is used to form a stress function to then
+    %compute the paths.
+    Fxx = scatteredInterpolant(nodalCoordinates(:,1), nodalCoordinates(:,2), nodalCoordinates(:,3), stress(:,1), 'natural');
+    Fyy = scatteredInterpolant(nodalCoordinates(:,1), nodalCoordinates(:,2), nodalCoordinates(:,3), stress(:,2), 'natural');
+    Fzz = scatteredInterpolant(nodalCoordinates(:,1), nodalCoordinates(:,2), nodalCoordinates(:,3), stress(:,3), 'natural');
+    Fxy = scatteredInterpolant(nodalCoordinates(:,1), nodalCoordinates(:,2), nodalCoordinates(:,3), stress(:,4), 'natural');
+    Fyz = scatteredInterpolant(nodalCoordinates(:,1), nodalCoordinates(:,2), nodalCoordinates(:,3), stress(:,5), 'natural');
+    Fxz = scatteredInterpolant(nodalCoordinates(:,1), nodalCoordinates(:,2), nodalCoordinates(:,3), stress(:,6), 'natural');
+    varargout = {Fxx, Fyy, Fzz, Fxy, Fyz, Fxz};
+end
+
+function [coords] = getCoords(nodeMatFile, nodeNumber)
     %getCoords - Description
     %
     % Syntax: [coords] = getCoords(nodeNumber)
     %
     % Long description
-    nodes = matfile(general.dirs.workingDir + general.path.nodes);
-    idx = nodes.nodeIdx(min(nodeNumber):max(nodeNumber), :);
-    [~,~, IC] = intersect(nodeNumber, idx);
-    coords = nodes.coords(min(IC):max(IC), :);
-    coords = coords(IC,:);
+    
+    idx = nodeMatFile.nodeIdx(min(nodeNumber):max(nodeNumber), :);
+    [uNodes,iU, ~] = intersect(nodeNumber, idx);
+    coords = nodeMatFile.coords(min(uNodes):max(uNodes), :);
+    coords = coords(iU,:);
 end
 
 function [outerFaceCoords] =  getOuterFaceCoods(general, faceArray)
+    nodeMatFile = matfile(general.dirs.workingDir + general.path.nodes);
     % TODO - Save face coords to matfile
     uNodes = reshape(faceArray,[],1);
-    [uNodes, ~, ic] = unique(uNodes);
-    outerFaceCoords = getCoords(general, uNodes);
-    % outerFaceCoords = coords(ic, :);
+    [uNodes, ~, faceIdx] = unique(uNodes);
+    outerFaceCoords = getCoords(nodeMatFile, uNodes);
+    outerFaceCoords = outerFaceCoords(faceIdx, :);
     [nRows, nCols] = size(faceArray);
     outerFaceCoords = reshape(outerFaceCoords, nRows, nCols,[]);
     outerFaceCoords = permute(outerFaceCoords, [2 1 3]);
@@ -390,6 +424,26 @@ function [outerFaceCoords] =  getOuterFaceCoods(general, faceArray)
     generateLocatingVariables(general, [outerFaceCoords([1:3], :,:), outerFaceCoords([1,3,4], :,:)]);
 end
 
+
+function plotFaces(general, faceArray)
+    %plotFaces - Description
+    %
+    % Syntax: plotFaces(faceArray)
+
+    triangulatedFaceCoords = [faceArray([1:3], :,:), faceArray([1,3,4], :,:)];
+    hold on
+
+    patch('XData',faceArray(:, :, 1),'YData',faceArray(:, :, 2),'ZData',faceArray(:, :, 3), 'EdgeColor','black','FaceColor','none', 'EdgeAlpha', 0.3)
+
+    testPoint = [1 1 1];
+
+    plot3(testPoint(1), testPoint(2), testPoint(3), '*', 'MarkerFaceColor', 'red')
+    hold off
+
+    utilities = getData(general, "u");
+    triIntersect(testPoint, utilities)
+
+end
 
 function [varargout] = generateLocatingVariables(general, faceVerticies)
     %generateLocatingVariables - generates and stores the preprocessed data for locating the point in mesh.
@@ -432,28 +486,6 @@ function [varargout] = generateLocatingVariables(general, faceVerticies)
     for k = 1:nargout
         varargout{k} = errorInData;
     end
-end
-
-function plotFaces(general, faceArray)
-    %plotFaces - Description
-    %
-    % Syntax: plotFaces(faceArray)
-
-    outerFaceCoords = getOuterFaceCoods(general, faceArray);
-
-    triangulatedFaceCoords = [outerFaceCoords([1:3], :,:), outerFaceCoords([1,3,4], :,:)];
-    hold on
-
-    patch('XData',outerFaceCoords(:, :, 1),'YData',outerFaceCoords(:, :, 2),'ZData',outerFaceCoords(:, :, 3), 'EdgeColor','black','FaceColor','none', 'EdgeAlpha', 0.3)
-
-    testPoint = [1 1 1];
-
-    plot3(testPoint(1), testPoint(2), testPoint(3), '*', 'MarkerFaceColor', 'red')
-    hold off
-
-    utilities = getData(general, "u");
-    triIntersect(testPoint, utilities)
-
 end
 
 function [in] = triIntersect(point, utilities)
