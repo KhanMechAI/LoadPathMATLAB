@@ -7,16 +7,16 @@ function [loadedVar] = getData(general, dataClass, varargin)
     end
     switch dataClass
         case "e"
-            curDir = general.dirs.workingDir + general.dirs.prepPathE...
+            curDir = general.local.dirs.workingDir + general.dirs.prepPathE...
                      + body + general.files.matExt;
         case "n"
-            curDir = general.dirs.workingDir + general.path.nodes;
+            curDir = general.local.dirs.workingDir + general.path.nodes;
         case "s"
-            curDir = general.dirs.workingDir + general.path.stress;
+            curDir = general.local.dirs.workingDir + general.path.stress;
         case "g"
-            curDir = general.dirs.workingDir + general.path.general;
+            curDir = general.local.dirs.workingDir + general.path.general;
         case "u"
-            curDir = general.dirs.workingDir + general.path.utilities;
+            curDir = general.local.dirs.workingDir + general.path.utilities;
     end
     if nargin < 3
         loadedVar = load(curDir);

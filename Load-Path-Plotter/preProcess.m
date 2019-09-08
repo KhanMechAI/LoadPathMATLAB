@@ -13,18 +13,16 @@ function [general] = preProcess(general)
 
     switch package
         case ANSYS
-            readAnsys()
+            [bodyData, nodalData, stressData] = readAnsys();
         case STRAND7
             readStrand7()
         otherwise
-            return 
+            return
     end
 
+    generateData(bodyData, nodalData, stressData, general)
 
-
-
-
-    function [] = readAnsys()
+    function [bodyData, nodalData, stressData] = readAnsys()
         %readAnsys - ANSYS specific import
         %
         % Syntax: [output] = readAnsys(fileId)
@@ -34,37 +32,39 @@ function [general] = preProcess(general)
 
         generateDirectories(general);
 
-        readDsDat()
-        readNodalSol()
-        generateData(general)
-    
+        [bodyData, nodalData] = readDsDat();
+        [stressData] = readNodalSol();
 
-        function varargout = readDsDat()
+        function [bodyData, nodalData] = readDsDat()
             %readDsDat - Imports data from ds.dat file.
             %
             % Syntax: varargout = readDsDat()
-            fileName = general.dirs.simulationDir + const.files.ds;
+            fileName = general.local.dirs.simulationDir + const.files.ds;
 
             regex = const.regex;
-        
+
             fileId = fopen(fileName,'rt');
             str = fgetl(fileId);
             prevStr = "";
             elementBlockCount = 1;
-            blockElementTypeMapping = {};
-        
+            bodyData{1}.elementBlockData = [];
+            bodyData{1}.connectivity = [];
+            bodyData{1}.elementIdx = [];
+            nodalData.coordinates = [];
+            nodalData.nodeIdx = [];
+
             while ~atEnd(str, regex.elemEnd)
                 [match, nonMatch] = regexp(str, regex.block, 'names', 'split');
                 if ~isempty(match)
-                    [blockData, nonMatch] = regexp(nonMatch{2}, regex.fields, 'names', 'split');
+                    [blockData, ~] = regexp(nonMatch{2}, regex.fields, 'names', 'split');
                     switch match.fieldType
                         case "n"
-                            readNode();
+                            [nodalData.coordinates, nodalData.nodeIdx] = readNode();
                         case "e"
-                            [elementBlockData, nonMatch] = regexp(prevStr, regex.elementBlockData, 'names', 'split');
+                            [elementBlockData, ~] = regexp(prevStr, regex.elementBlockData, 'names', 'split');
                             elementType = uint32(str2double(elementBlockData.elementType));
                             iBody = uint32(str2double(elementBlockData.iBody));
-                            readElement();
+                            [bodyData{iBody}.connectivity, bodyData{iBody}.elementIdx, bodyData{iBody}.elementBlockData] = readElement();
                             elementBlockCount = elementBlockCount + 1;
                         case "end"
                             continue
@@ -75,19 +75,19 @@ function [general] = preProcess(general)
             end
             fclose(fileId);
 
-            function readElement()
+            function [connectivity, elementIdx, elementBlockData] = readElement()
                 %readElement - Reads element connectivity data and transforms the data ready for saving
                 %
                 % Syntax: [dataLabels, inputData] = readElement()
                 %TODO: Write function to handle elements with more than 8 nodes.
 
-                
+
                 [nLines] = getNLines(fileId, 2);
-            
+
                 elementFields = uint32(str2double(split(strtrim(nLines(2,:)))));
-            
+
                 nElements = uint32(str2double(blockData(end).fields));
-            
+
                 if ~isempty([blockData.solid])
                     nodesPerElement = elementFields(9);
                 else
@@ -106,66 +106,63 @@ function [general] = preProcess(general)
 
                 iBodyiBlockNodes = unique(reshape(connectivity,1,[]));
                 general.local.body{iBody}.elementData(elementBlockCount,:) = [nElements, nodesPerElement, elementType];
+                elementBlockData = [nElements, nodesPerElement, elementType];
 
 
-                elementPrepPath = general.dirs.workingDir + general.dirs.prepPathE + num2str(elementBlockCount) + general.files.matExt;
+                elementPrepPath = general.local.dirs.workingDir + general.dirs.prepPathE + num2str(elementBlockCount) + general.files.matExt;
 
-                dataLabels = [general.varNames.elementIdx, general.varNames.connectivity];
+                dataLabels = ["elementIdx", "connectivity"];
                 inputData.connectivity = connectivity;
                 inputData.elementIdx = elementIdx;
-            
+
                 saveToMat(elementPrepPath, dataLabels, inputData, false);
             end
-            
-            function readNode()
+
+            function [coords, nodeIdx] = readNode()
                 %readNode - Reads node coordinate data and transforms the data ready for saving
                 %
                 % Syntax: [dataLabels, inputData] = readNode()
 
-                
                 maxNodes = uint32(str2double(blockData(end).fields));
-                
+
                 fgetl(fileId); %increment the cursor to node block
-                
+
                 general.local.maxNodes = maxNodes;
-            
+
                 coords = NaN([maxNodes, 3], 'double');
                 nodeIdx = zeros([maxNodes, 1], 'uint32');
-            
+
                 tmp = textscan(fileId, const.format.nodes,'MultipleDelimsAsOne', true, 'CollectOutput', true);
                 endIdx = length(tmp{1, 1}(:));
-            
+
                 nodeIdx(1:endIdx) = tmp{1}(1:endIdx);
                 coords(1:endIdx, :) = tmp{2:end}(1:endIdx, :);
-                kdTreeNodes = createns(coords,'NSMethod','kdtree');
 
-
-                nodePrepPath = general.dirs.workingDir + general.dirs.prepPathN + general.files.nodes;
-                dataLabels = [general.varNames.nodeIdx, general.varNames.coords, general.varNames.kdTreeNodes];
+                nodePrepPath = general.local.dirs.workingDir + general.dirs.prepPathN + general.files.nodes;
+                dataLabels = ["nodeIdx", "coords"];
                 inputData.nodeIdx = nodeIdx;
                 inputData.coords = coords;
-                inputData.kdTreeNodes = kdTreeNodes;
-            
-                saveToMat(nodePrepPath, dataLabels, inputData, false);            
+
+                saveToMat(nodePrepPath, dataLabels, inputData, false);
             end
-            
-        end   
-        
-        function varargout = readNodalSol()
+
+        end
+
+        function [stressData] = readNodalSol()
             %readNodalSol - reads in the stress data from nodalSolution.txt
             %
             % Syntax: varargout = readNodalSol()
-            fileName = general.dirs.simulationDir + const.files.nodalSol;
-    
-            stressPrepPath = general.dirs.workingDir + general.dirs.prepPathS + general.files.stress;
-        
+            fileName = general.local.dirs.simulationDir + const.files.nodalSol;
+
+            stressPrepPath = general.local.dirs.workingDir + general.dirs.prepPathS + general.files.stress;
+
             fileId = fopen(fileName,'rt');
             str = convertCharsToStrings(fgetl(fileId));
             lineTest = true;
 
             stress = zeros([general.local.maxNodes, 6], 'double');
             nodalStressIdx = zeros([general.local.maxNodes, 1], 'uint32');
-            
+
             while lineTest
                 [match, nonMatch] = regexp(str, const.regex.nodeSolBlock, 'names', 'noemptymatch');
                 if ~isempty(match)
@@ -182,18 +179,115 @@ function [general] = preProcess(general)
             nodalStressIdx(1:endIdx) = tmp{1}(1:endIdx);
             stress(1:endIdx, :) = tmp{2:end}(1:endIdx, :);
 
-            dataLabels = [general.varNames.nodalStressIdx, general.varNames.stress];
+            dataLabels = ["nodalStressIdx", "stress"];
             inputData.stress = stress;
             inputData.nodalStressIdx = nodalStressIdx;
 
             saveToMat(stressPrepPath, dataLabels, inputData, false);
+
+            stressData.stress = stress;
+            stressData.nodalStressIdx = nodalStressIdx;
         end
 
-        dataLabels = [general.varNames.general];
+        dataLabels = ["general"];
         inputData.general = general;
-        generalOutPath = general.dirs.workingDir + general.path.general;
+        generalOutPath = general.local.dirs.workingDir + general.path.general;
 
         saveToMat(generalOutPath, dataLabels, inputData, false);
+    end
+end
+
+function generateData(bodyData, nodalData, stressData, general)
+    nBodies = size(bodyData{:}, 1);
+    locatingData{nBodies}.elementFaceIndexingArray = [];
+    locatingData{nBodies}.faceMappingVector = [];
+    locatingData{nBodies}.faceCoords = [];
+    locatingData{nBodies}.bodyHullIdx = [];
+    locatingData{nBodies}.kdTreeElements = [];
+    locatingData{nBodies}.rayCastVars = [];
+    for k = 1:nBodies
+        bodyData{k}.elementInterpFunc = cell(bodyData{k}.elementBlockData(1),1);
+
+        % DISABLED DURING DEVELOPEMENT
+        
+        [locatingData{k}.elementFaceIndexingArray, ...
+        locatingData{k}.faceMappingVector, ...
+        locatingData{k}.faceCoords, ...
+        locatingData{k}.bodyHullIdx] = generateFaces(bodyData{k}.elementBlockData, bodyData{k}.connectivity);
+        
+        [bodyData{k}.elementInterpFunc] = generateInterpFunction();
+
+        locatingData{k}.kdTreeElements = getElementCentroids();
+        % TODO - It is currently element 185 specific - make general. i.e.
+        % I'm making triangles from the 4 nodes that define the face. 
+        % Needs to be adapted for elements with more or less nodes.
+        locatingData{k}.rayCastVars = generateLocatingVariables(general, [locatingData{k}.faceCoords([1:3], :,:), locatingData{k}.faceCoords([1,3,4], :,:)]);
+    end
+    inputData.bodyData = bodyData;
+    inputData.locatingData = locatingData;
+    dataLabels = ["bodyData","locatingData"];
+    outPath = general.local.dirs.workingDir + general.path.utilities;
+    saveToMat(outPath, dataLabels, inputData, false);
+    function [elementFaceIndexingArray, faceMappingVector, faceCoords, bodyHullIdx] = generateFaces(elementData, connectivity)
+            faceDefinition = faceDef(elementData(3));
+
+            [nFaces, nNodesPerFace] = size(faceDefinition);
+            faceArray =  zeros([elementData(1)*nFaces, nNodesPerFace], 'uint32');
+
+            faceArray(:,:) = reshape(connectivity(:,faceDefinition),elementData(1)*nFaces, nNodesPerFace);
+
+            [sortedFaceArray, ~] = sort(faceArray, 2);
+
+            [~, ind, faceMappingVector] = unique(sortedFaceArray, 'rows');
+
+            elementFaceIndexingArray = reshape(1:elementData(1)*nFaces, elementData(1), nFaces);
+
+            bodyHullIdx = histcounts(faceMappingVector, length(ind)) < 2;
+
+            filteredFaces = faceArray(ind,:);
+
+            faceCoords = getFaceCoords(filteredFaces);
+        end
+    function [faceCoords] = getFaceCoords(faceArray)
+        %getFaceCoords - Returns the coordinates of faces defined by node indicies. 
+        %                Faces to be defined as either clockwise or counter clockwise.
+        % Syntax: [faceCoords] = getFaceCoords(general, faceArray)
+        [nRows, nCols] = size(faceArray);
+        faceOrderVector = zeros(nRows*nCols, 1);
+        faceOrderVector(:) = reshape(faceArray,1,nRows*nCols); % get all node from all faces in vector
+        [uNodes, faceOrder, faceIdx] = unique(faceOrderVector); % remove duplicates for efficiency
+        faceCoords = zeros(size(uNodes,1),3);
+        faceCoords(:,:) = getCoords(nodalData, uNodes); %get the coords of the nodes
+        faceCoords = faceCoords(faceIdx, :);
+        faceCoords = reshape(faceCoords, nRows, nCols,3);
+        faceCoords = permute(faceCoords, [2 1 3]);
+    end
+    function [interpolationFunctions] = generateInterpFunction()
+        %generateInterpFunction - Description
+        %
+        % Syntax: [interpolationFunctions] = generateInterpFunction(input)
+        %
+        % Long description
+        myCluster = parcluster('local');
+        nWorkers = myCluster.NumWorkers;
+        interpolationFunctions = cell(bodyData{k}.elementBlockData(1), 1);
+        parfor (j = 1:bodyData{k}.elementBlockData(1), nWorkers)
+            localNodes = bodyData{k}.connectivity(j,:);
+            localNodeCoords = getCoords(nodalData, localNodes);
+            localStress = stressData.stress(localNodes,:);
+            interpolationFunctions{j} = interpFunction(localStress, localNodeCoords);
+        end
+    end
+    function kdTreeElements = getElementCentroids()
+        elementCentroids = zeros([bodyData{k}.elementBlockData(1), 3]);
+        myCluster = parcluster('local');
+        nWorkers = myCluster.NumWorkers;
+        parfor (j = 1:bodyData{k}.elementBlockData(1), nWorkers)
+            localNodes = bodyData{k}.connectivity(j,:);
+            localNodeCoords = getCoords(nodalData, localNodes);
+            elementCentroids(j,:) = mean(localNodeCoords,1);
+        end
+        kdTreeElements = createns(elementCentroids,'NSMethod','kdtree');
     end
 end
 
@@ -201,7 +295,7 @@ function generateDirectories(general)
     %TODO:  Future imporvement to clear the directories prior to creation.
     fn = fieldnames(general.dirs(:));
     for k = 1:numel(fn)
-        [a, b] = mkdir(general.dirs.workingDir + general.dirs.(fn{k}));
+        [a, b] = mkdir(general.local.dirs.workingDir + general.dirs.(fn{k}));
     end
 end
 function endElements = atEnd(str, pat)
@@ -218,19 +312,6 @@ function endElements = atEnd(str, pat)
                 endElements = true;
             end
         end
-    end
-end
-
-
-
-function [retVal] = nodeOrElement(caseType)
-    switch caseType
-        case 'Nodes'
-            retVal = 0;
-        case 'Elements'
-            retVal = 1;
-        otherwise
-            retVal = -1;
     end
 end
 
@@ -254,21 +335,6 @@ function varargout = saveToMat(prepPath, dataLabels, inputData, appendData)
     varargout{1} = [];
     for k = 1:nout
         varargout{k} = matFileObject;
-    end
-end
-
-function [varargout] = getElementType(elementTypeString)
-    %getElementType - Parses the element type and returns the connectivity
-    %
-    % Syntax: [connectivity] = getElementType(elementTypeString)
-
-    elementType = split(elementTypeString,',')
-    iBody = uint32(str2double(elementType(2)))
-    element = uint32(str2double(elementType(3)))
-
-    temp = {element, iBody}
-    for k = 1:nargout
-        varargout{k} = temp{k}
     end
 end
 
@@ -329,63 +395,7 @@ function [faces] = faceDef(elementType)
     end
 end
 
-function generateData(general)
-
-    elementData = general.local.body{:}.elementData;
-    % nodeIdx = getData(general, "n", general.varNames.nodeIdx);
-    maxNodes = general.local.maxNodes;
-    nBodies = size(elementData, 1);
-    maxElements = 8;
-    nodalConnectivity = zeros(maxNodes, maxElements);
-    nodeMatFile = matfile(general.dirs.workingDir + general.path.nodes)
-    elementInterpolationFunctions = cell(nBodies,1)
-    for k = 1:nBodies
-        elementInterpolationFunctions{k} = cell(elementData(k,1),1)
-        faceArray = faceDef(elementData(k,3));
-        [nFaces, nNodesPerFace] = size(faceArray);
-        bodyFaceArray = zeros([elementData(k,1)*nFaces, nNodesPerFace], 'uint32');
-        connectivity = zeros([elementData(k,1), elementData(k,2)], 'uint32');
-        connectivity(:)  = getData(general,"e", general.varNames.connectivity, k);
-        stress = getData(general,"s", general.varNames.stress);
-        
-        for j = 1:elementData(k,1)
-            localNodes = connectivity(j,:);
-            localNodeCoords = getCoords(nodeMatFile, localNodes);
-            localStress = stress(localNodes,:);
-            elementInterpolationFunctions{k, j} = interpFunction(localStress, localNodeCoords);
-        end
-
-        bodyFaceArray(:) = reshape(connectivity(:,faceArray),elementData(k,1)*nFaces, nNodesPerFace);
-
-        
-        [~, ind, idx] = unique(sort(bodyFaceArray, 2), 'rows');
-        uFaceIdx = histcounts(idx, length(ind)) < 2;
-        filteredFaces = bodyFaceArray(ind,:);
-        outerFaces = filteredFaces(uFaceIdx,:);
-        outerFaceCoords = getOuterFaceCoods(general, outerFaces);
-        plotFaces(general, outerFaceCoords)
-        
-        [~, uidx, b] = unique(sort(bodyFaceArray, 2), 'rows');
-        bodySurfaceFaces = bodyFaceArray(uidx,:);
-        for n = 1:maxNodes
-            indices = find(any(connectivity==n,2));
-            nodalConnectivity(n,1:length(indices)) = indices;
-        end
-        nodalConnectivity( ~any(nodalConnectivity,2), : ) = [];  %rows
-        nodalConnectivity( :, ~any(nodalConnectivity,1) ) = [];  %columns
-        
-        inputData.nodalConnectivity = nodalConnectivity;
-        dataLabels = [general.varNames.nodalConnectivity];
-        outPath = general.dirs.workingDir + general.path.nodes;
-        saveToMat(outPath, dataLabels, inputData, true);
-    end
-end
-
-function generateElementData(general);
-
-end
-
-function [varargout] = interpFunction(stress, nodalCoordinates)
+function [retVal] = interpFunction(stress, nodalCoordinates)
     %Natural interpolation method is used to form a stress function to then
     %compute the paths.
     Fxx = scatteredInterpolant(nodalCoordinates(:,1), nodalCoordinates(:,2), nodalCoordinates(:,3), stress(:,1), 'natural');
@@ -394,59 +404,18 @@ function [varargout] = interpFunction(stress, nodalCoordinates)
     Fxy = scatteredInterpolant(nodalCoordinates(:,1), nodalCoordinates(:,2), nodalCoordinates(:,3), stress(:,4), 'natural');
     Fyz = scatteredInterpolant(nodalCoordinates(:,1), nodalCoordinates(:,2), nodalCoordinates(:,3), stress(:,5), 'natural');
     Fxz = scatteredInterpolant(nodalCoordinates(:,1), nodalCoordinates(:,2), nodalCoordinates(:,3), stress(:,6), 'natural');
-    varargout = {Fxx, Fyy, Fzz, Fxy, Fyz, Fxz};
+    retVal = {Fxx, Fyy, Fzz, Fxy, Fyz, Fxz};
 end
-
-function [coords] = getCoords(nodeMatFile, nodeNumber)
-    %getCoords - Description
+function [coords] = getCoords(nodalData, nodeNumber)
+    %getCoords - returns coordinates of node number(s).
     %
     % Syntax: [coords] = getCoords(nodeNumber)
-    %
-    % Long description
-    
-    idx = nodeMatFile.nodeIdx(min(nodeNumber):max(nodeNumber), :);
-    [uNodes,iU, ~] = intersect(nodeNumber, idx);
-    coords = nodeMatFile.coords(min(uNodes):max(uNodes), :);
-    coords = coords(iU,:);
+    [~, idx, ~] = intersect(nodalData.nodeIdx, nodeNumber);
+    coords = nodalData.coordinates(idx, :);
 end
 
-function [outerFaceCoords] =  getOuterFaceCoods(general, faceArray)
-    nodeMatFile = matfile(general.dirs.workingDir + general.path.nodes);
-    % TODO - Save face coords to matfile
-    uNodes = reshape(faceArray,[],1);
-    [uNodes, ~, faceIdx] = unique(uNodes);
-    outerFaceCoords = getCoords(nodeMatFile, uNodes);
-    outerFaceCoords = outerFaceCoords(faceIdx, :);
-    [nRows, nCols] = size(faceArray);
-    outerFaceCoords = reshape(outerFaceCoords, nRows, nCols,[]);
-    outerFaceCoords = permute(outerFaceCoords, [2 1 3]);
-    % TODO - It is currently element 185 specific - make general. i.e. I'm making triangles from the 4 nodes that define the face. Needs to be adapted for elements with more or less nodes.
-    generateLocatingVariables(general, [outerFaceCoords([1:3], :,:), outerFaceCoords([1,3,4], :,:)]);
-end
-
-
-function plotFaces(general, faceArray)
-    %plotFaces - Description
-    %
-    % Syntax: plotFaces(faceArray)
-
-    triangulatedFaceCoords = [faceArray([1:3], :,:), faceArray([1,3,4], :,:)];
-    hold on
-
-    patch('XData',faceArray(:, :, 1),'YData',faceArray(:, :, 2),'ZData',faceArray(:, :, 3), 'EdgeColor','black','FaceColor','none', 'EdgeAlpha', 0.3)
-
-    testPoint = [1 1 1];
-
-    plot3(testPoint(1), testPoint(2), testPoint(3), '*', 'MarkerFaceColor', 'red')
-    hold off
-
-    utilities = getData(general, "u");
-    triIntersect(testPoint, utilities)
-
-end
-
-function [varargout] = generateLocatingVariables(general, faceVerticies)
-    %generateLocatingVariables - generates and stores the preprocessed data for locating the point in mesh.
+function [rayCastVars] = generateLocatingVariables(general, faceVerticies)
+    % generateLocatingVariables - generates and stores the preprocessed data for locating the point in mesh.
     % varargout: true if error in data, false otherwise
     %
     % Syntax: [varargout] = generateLocatingVariable(faceVerticies)
@@ -456,67 +425,25 @@ function [varargout] = generateLocatingVariables(general, faceVerticies)
     u = V1 - V0;
     v = V2 - V0;
     n = cross(u, v, 2);
+
+    if all(~n, 'all')
+        rayCastVars  = false;
+        return
+    end
+
     uu = dot(u,u, 2);
     uv = dot(u,v, 2);
     vv = dot(v,v, 2);
-    D = uv .* uv - uu .* vv;
+    D = (uv).^2 - (uu .* vv);
 
-    errorInData = true;
-    if all(~n, 'all')
-        errorInData  =false;
-    end
-
-    dataLabels = [general.varNames.V0, general.varNames.u, general.varNames.v, general.varNames.n, general.varNames.uu, general.varNames.uv, general.varNames.vv, general.varNames.D, general.varNames.infPoint];
-
-    inputData.V0 = V0;
-    inputData.u = u;
-    inputData.v = v;
-    inputData.n = n;
-    inputData.uu = uu;
-    inputData.uv = uv;
-    inputData.vv = vv;
-    inputData.D = D;
-    inputData.infPoint = general.constants.infPoint;
-
-    outPath = general.dirs.workingDir + general.path.utilities;
-
-    saveToMat(outPath, dataLabels, inputData, false);
-
-    varargout{1} = [];
-    for k = 1:nargout
-        varargout{k} = errorInData;
-    end
+    rayCastVars.V0 = V0;
+    rayCastVars.u = u;
+    rayCastVars.v = v;
+    rayCastVars.n = n;
+    rayCastVars.uu = uu;
+    rayCastVars.uv = uv;
+    rayCastVars.vv = vv;
+    rayCastVars.D = D;
+    rayCastVars.infPoint = general.constants.infPoint;
+    rayCastVars.tol = general.constants.tol;
 end
-
-function [in] = triIntersect(point, utilities)
-    %triIntersect - Description
-    %
-    % Syntax: [in] = triIntersect(point, faceVerticies)
-    %
-    % Adapted from: http://geomalgorithms.com/a06-_intersect-2.html
-    in = false;
-
-    ray = utilities.infPoint - point;
-
-    w0 = point - utilities.V0;
-
-    a = -dot(utilities.n, w0, 2);
-    b = utilities.n * ray.';
-
-    r = a ./ b;
-
-    I = point + (r * ray);
-
-    w = I - utilities.V0;
-    wu = dot(w,utilities.u, 2);
-    wv = dot(w,utilities.v, 2);
-
-    s = (utilities.uv .* wv - utilities.vv .* wu) ./ utilities.D ;
-
-    t = (utilities.uv .* wu - utilities.uu .* wv) ./ utilities.D ;
-
-    if sum((t > 0.0 & (s + t) > 1.0) & (r > 0) & (s > 0.0) & (s < 1.0)) > 0
-        in = true;
-    end
-end
-

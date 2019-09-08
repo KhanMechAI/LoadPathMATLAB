@@ -38,6 +38,8 @@ general.pathSep.OSX = "/";
 general.pathSep.PC = "\";
 
 general.varNames.elementIdx = "elementIdx";
+general.varNames.elementFaceIndexingArray = "elementFaceIndexingArray";
+general.varNames.faceMappingVector = "faceMappingVector";
 general.varNames.connectivity = "connectivity";
 general.varNames.nodalConnectivity = "nodalConnectivity";
 general.varNames.kdTreeNodes = "kdTreeNodes";
@@ -60,6 +62,7 @@ general.varNames.D = "D";
 general.varNames.infPoint = "infPoint";
 
 general.constants.infPoint = [1e8 1e8 1e8];
+general.constants.tol = 0.0001;
 general.constants.stressTensor = [1 4 6;...
                                 4 2 5;...
                                 6 5 3];

@@ -1,5 +1,5 @@
 function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(...
-    general, xseed,yseed,zseed, ReversePath, wb)
+    general, xseed,yseed,zseed, reversePath, wb)
 
     %p0 is initial seed point. Projection multiplier is used to 'jump' gaps
     %between parts in the model. It will project the path from onee part to
@@ -27,12 +27,27 @@ function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(.
             V = Vz;
     end
     %Locate the seed point in the model globally.
+    [currBody] = findCurrentBody(p0);
+    if ~currBody
+        fprintf('Seed Point (%f, %f, %f) not in solution domain\n', xseed, yseed, zseed);
+        currBody=1;
+        figure;
+        plotBody
+        plotPoint
+        plotRay
+        [currBody] = findCurrentBody(p0);
+        x_path = [];
+        y_path = [];
+        z_path =[];
+        intensity = [];
+        return
+    end
 
-    [in, Element] = point_in_element(p0, utilities);
+    [element] = findCurrentElement(p0, currBody);
 
-    if in
+    if element
         %Get and set stress function
-        [F, Fs1, Fs2] = setInterpFunc(Element, general.constants.pathDir, ReversePath);
+        [F, Fs1, Fs2] = getInterpolationData(element, utilities.bodyData{currBody}.elementInterpFunc, general.constants.pathDir, reversePath);
     else
         fprintf('Seed Point (%f, %f, %f) not in solution domain\n', xseed, yseed, zseed);
         x_path = [];
@@ -41,13 +56,15 @@ function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(.
         intensity = [];
         return
     end
+
     %Populating with NaN's prevents plotting errors later.
     p = NaN(3,general.constants.pathLength,'double');
     intensity = NaN(1,general.constants.pathLength,'double');
     w = 1;
-    element_change = false;
+    prevElement = element;
+    currElementUtilities = getElementUtilities(element, utilities.locatingData{currBody});
 
-    while w <= general.constants.pathLength && in ~= false
+    while element ~= false && w <= general.constants.pathLength
         %Terminate program if cancel button is pressed
         if getappdata(wb,'canceling')
             delete(wb)
@@ -80,19 +97,25 @@ function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(.
 
         p0 = p0 + 1/6 * (dp1 + 2*dp2 + 2*dp3 + dp4);
 
-	    %Locate element that the point is inside
-        [in, new_Element] = point_in_element(p0, utilities);
-
-        %If the point is outside the local radius, we attempt to find it
-        %globablly. The path is projected along its last vector in an
-        %attempt to get it to 'land' in another element for the case where
-        %its in a small gap between elements.
-
-        if in && new_Element(1).ElementNo ~= Element(1).ElementNo
-            [F, Fs1, Fs2] = setInterpFunc(Element,general.constants.pathDir, ReversePath);
+        %Locate element that the point is inside
+        if ~triIntersect(p0, currElementUtilities)
+            [currBody] = findCurrentBody(p0, currBody);
+            if ~currBody
+                element = false;
+                disp('not in body')
+            else
+                [element] = findCurrentElement(p0, currBody);
+                if element
+                    currElementUtilities = getElementUtilities(element, utilities.locatingData{currBody});
+                else
+                    disp('in body, but not in element')
+                end
+            end
         end
 
-        Element = new_Element;
+        if element && prevElement ~= element
+            [F, Fs1, Fs2] = getInterpolationData(element, utilities.bodyData{currBody}.elementInterpFunc, general.constants.pathDir, reversePath);
+        end
         w=w+1;
     end
     nancols = ~isnan(p(1,:));
@@ -104,7 +127,8 @@ function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(.
     y_path = p(2,:);
     z_path = p(3,:);
     intensity = intensity(:)';
-    if ReversePath
+    
+    if reversePath
         x_path = fliplr(x_path);
         y_path = fliplr(y_path);
         z_path = fliplr(z_path);
@@ -117,41 +141,127 @@ function [x_path, y_path,z_path, intensity] =  RunLibrary_rungekuttaNatInter3D(.
         shear2 = Fs2(p(1), p(2), p(3));
         d_point =  V(stress, shear1, shear2)*general.constants.stepSize/intensity(w);
     end
-end
-function [F, Fs1, Fs2] = setInterpFunc(Element, pathDir, ReversePath)
-    %Natural interpolation method is used to form a stress function to then
-    %compute the paths.
-    % TODO: - How many nodes do i need?
-    surr_elements = RunLibrary_surrounding_elemnts(Element, Element);
-    nodes = unique([surr_elements(:).nodes]);
-    coordx = [nodes(:).xCoordinate]';
-    coordy = [nodes(:).yCoordinate]';
-    coordz = [nodes(:).zCoordinate]';
 
-    switch general.constants.pathDir
-        case 'X'
-            stress_tensor = [[nodes(:).xStress]', [nodes(:).xyStress]', [nodes(:).xzStress]'];
-        case 'Y'
-            stress_tensor = [[nodes(:).yStress]', [nodes(:).xyStress]', [nodes(:).yzStress]'];
-        case 'Z'
-            stress_tensor = [[nodes(:).zStress]', [nodes(:).xzStress]', [nodes(:).yzStress]'];
+    function plotBody(varargin)
+        if nargin == 0 
+            for k = 1:length(utilities.locatingData)
+                bodyHullIdx = utilities.locatingData{k}.bodyHullIdx;
+                bodyFaceCoords = utilities.locatingData{k}.faceCoords(:,bodyHullIdx,:);
+                plotFaces(bodyFaceCoords, 'black', 0.2);
+            end
+        else
+            bodyHullIdx = utilities.locatingData{varargin}.bodyHullIdx;
+            bodyFaceCoords = utilities.locatingData{varargin}.faceCoords(:,bodyHullIdx,:);
+            plotFaces(bodyFaceCoords, 'black', 0.2);
+        end
     end
-    F = scatteredInterpolant(coordx, coordy, coordz, stress_tensor(:,1), 'natural');
-    Fs1 = scatteredInterpolant(coordx, coordy, coordz, stress_tensor(:,2), 'natural');
-    Fs2 = scatteredInterpolant(coordx, coordy, coordz, stress_tensor(:,3), 'natural');
-    %Flips the stress function when the backwards path is being computed.
-    if ReversePath
-        F=@(x,y, z) -F(x,y, z);
-        Fs1=@(x,y,z) -Fs1(x,y,z);
-        Fs2=@(x,y,z) -Fs2(x,y,z);
+    
+    function plotElement()
+    
+        indexingArray = utilities.locatingData{currBody}.elementFaceIndexingArray;
+        mappingVector = utilities.locatingData{currBody}.faceMappingVector;
+        elidx = mappingVector(indexingArray(element,:));
+    
+        elementFaceCoords = utilities.locatingData{currBody}.faceCoords(:,elidx,:);
+        plotFaces(elementFaceCoords, 'red', 1);
     end
-end
 
-function [varargout] = point_in_element(p0, utilities)
-    in_test = triIntersect(p0, utilities)
-    in = in_test;
-    Element = PartArr(1).elements(in_test);
-    varargout = {in, Element};
+    function plotPoint(varargin)
+        if nargin > 0
+            point = varargin{1};
+        else
+            point = p0;
+        end
+        gcf;
+        hold on
+        plot3(point(1), point(2), point(3), '*', 'MarkerFaceColor', 'red')
+        hold off
+    end
+
+    function plotRay(varargin)
+        point = zeros([2,3]);
+        point(1,:) = [1e8 1e8 1e8]
+        if nargin > 0
+            point(2,:) = varargin{1};
+        else
+            point(2,:) = p0;
+        end
+        gcf;
+        hold on
+        plot3(point(:,1), point(:,2), point(:,3), '*', 'MarkerFaceColor', 'red')
+        hold off
+    end
+
+    function [element] = findElementInBody(p0, currBody)
+        %findElementInBody - Description
+        %
+        % Syntax: [element] = findElementInBody(p0, currBody)
+        k = 1;
+        inElement = false;
+        while k < utilities.bodyData.elementBlockData(1) && ~inElement
+            elementUtilities = getElementUtilities(testElements(k), utilities.locatingData{currBody});
+            inElement = triIntersect(p0, elementUtilities);
+            if ~inElement
+                k = k +1;
+            end
+        end
+        if inElement
+            element = testElements(k);
+        else
+            element = false;
+        end
+    end
+
+    function [element] = findCurrentElement(p0, currBody)
+        try
+            testElements = knnsearch(utilities.locatingData{currBody}.kdTreeElements,p0','K',8);
+        catch
+            aa=1;
+        end
+        k = 1;
+        inElement = false;
+        while k < size(testElements, 2) && ~inElement
+            elementUtilities = getElementUtilities(testElements(k), utilities.locatingData{currBody});
+            inElement = triIntersect(p0, elementUtilities);
+            if ~inElement
+                k = k +1;
+            end
+        end
+        if inElement
+            element = testElements(k);
+        else
+            element = false;
+        end
+    end
+
+    function [body] = findCurrentBody(p0, varargin)
+        if nargin > 1
+            body = varargin{1};
+        else
+            body = 1;
+        end
+        [bodyUtilities] = getBodyHullUtilities(utilities.locatingData{body});
+        inBody = triIntersect(p0, bodyUtilities);
+        if inBody
+            return
+        else
+            k = 1;
+            while k < size(utilities.locatingData{:}, 2) && ~inBody
+                if k ~= body
+                    [bodyUtilities] = getBodyHullUtilities(elementNo, utilities.locatingData{k});
+                    inBody = triIntersect(p0, bodyUtilities);
+                end
+                if ~inBody
+                    k = k+1;
+                end
+            end
+        end
+        if inBody
+            body = k;
+        else
+            body = false;
+        end
+    end
 end
 
 function [varargout] = projection(in, p0, Element)
@@ -178,16 +288,16 @@ function [loadedVar] = getData(general, dataClass, varargin)
     end
     switch dataClass
         case "e"
-            curDir = general.dirs.workingDir + general.dirs.prepPathE...
+            curDir = general.local.dirs.workingDir + general.dirs.prepPathE...
                      + body + general.files.matExt;
         case "n"
-            curDir = general.dirs.workingDir + general.path.nodes;
+            curDir = general.local.dirs.workingDir + general.path.nodes;
         case "s"
-            curDir = general.dirs.workingDir + general.path.stress;
+            curDir = general.local.dirs.workingDir + general.path.stress;
         case "g"
-            curDir = general.dirs.workingDir + general.path.general;
+            curDir = general.local.dirs.workingDir + general.path.general;
         case "u"
-            curDir = general.dirs.workingDir + general.path.utilities;
+            curDir = general.local.dirs.workingDir + general.path.utilities;
     end
     if nargin < 3
         loadedVar = load(curDir);
@@ -196,7 +306,7 @@ function [loadedVar] = getData(general, dataClass, varargin)
         loadedVar = loadedVar.(varToLoad);
     end
 end
-function [in] = triIntersect(point, utilities)
+function [in] = triIntersect(point, rayCastData)
     %triIntersect - Description
     %
     % Syntax: [in] = triIntersect(point, faceVerticies)
@@ -207,34 +317,129 @@ function [in] = triIntersect(point, utilities)
 
     in = false;
 
-    ray = utilities.infPoint - point;
+    rayDir = rayCastData.infPoint - point;
 
-    w0 = point - utilities.V0;
+    rayDir = repmat(rayDir, size(rayCastData.V0,1),1);
 
-    a = -dot(utilities.n, w0, 2);
-    b = utilities.n * ray.';
+    w0 = point - rayCastData.V0;
+
+    a = -dot(rayCastData.n, w0, 2);
+    b = dot(rayCastData.n, rayDir, 2);
 
     r = a ./ b;
 
-    I = point + (r * ray);
+    test1Idx = r >= 0 & r <= 1;
+    if ~any(test1Idx)
+        return
+    end
 
-    w = I - utilities.V0;
-    wu = dot(w,utilities.u, 2);
-    wv = dot(w,utilities.v, 2);
+    I = point + (r(test1Idx, :) .* rayDir(test1Idx, :));
 
-    s = (utilities.uv .* wv - utilities.vv .* wu) ./ utilities.D ;
+    w = I - rayCastData.V0(test1Idx, :);
+    wu = dot(w, rayCastData.u(test1Idx, :), 2);
+    wv = dot(w, rayCastData.v(test1Idx, :), 2);
 
-    t = (utilities.uv .* wu - utilities.uu .* wv) ./ utilities.D ;
+    s = ((rayCastData.uv(test1Idx, :) .* wv) - (rayCastData.vv(test1Idx, :) .* wu))./ rayCastData.D(test1Idx, :) ;
+    test2Idx = test1Idx(test1Idx) & (s >= 0 & s <= 1);
+    test1Idx(test1Idx) = test2Idx;
+    if ~any(test2Idx)
+        return
+    end
+    
+    t = ((rayCastData.uv(test1Idx, :) .* wu(test2Idx)) - (rayCastData.uu(test1Idx, :) .* wv(test2Idx))) ./ rayCastData.D(test1Idx, :) ;
+    test3Idx = test2Idx(test2Idx) & (t >= 0 & (s(test2Idx) + t) <= 1);
+    test2Idx(test2Idx) = test3Idx;
+    test1Idx(test1Idx) = test3Idx;
+    if ~any(test3Idx)
+        return
+    end
 
-    if sum((t > 0.0 & (s + t) > 1.0) & (r > 0) & (s > 0.0) & (s < 1.0)) > 0
+    % test1 = s >= 0 & s <= 1;
+    % test2 = t >= 0 & (s + t) <= 1;
+    % test3 = r >= 0;
+    intersections = sum(test3Idx);
+
+    if rem(intersections, 2) ~= 0
         in = true;
+    end
+    if any(intersections, 'all') 
+        suckEggsBoy = true;
+
     end
 end
 
-function [varagout] = getInterpolationData(point, general)
+function [F, Fs1, Fs2] = getInterpolationData(element, interpFunctions, pathDir, reversePath)
     %getInterpolationData - Description
     %
     % Syntax: [varagout] = getInterpolationData(point, general)
+    switch pathDir
+        case 'X'
+            interpolantIdx = [1 4 6]; %Fxx Fxy Fxz
+        case 'Y'
+            interpolantIdx = [2 4 5]; %Fyy Fxy Fyz
+        case 'Z'
+            interpolantIdx = [3 6 5]; %Fzz Fyz Fxz
+    end
+    [F, Fs1, Fs2] = interpFunctions{element}{interpolantIdx};
+    if reversePath
+        F=@(x,y, z) -F(x,y, z);
+        Fs1=@(x,y,z) -Fs1(x,y,z);
+        Fs2=@(x,y,z) -Fs2(x,y,z);
+    end
+end
 
+function [elementUtilities] = getElementUtilities(elementNo, utilities)
+    %getElementUtilities - Description
+    %
+    % Syntax: [elementUtilities] = getElementUtilities(elementNo, utilities)
+    indexingArray = utilities.elementFaceIndexingArray;
+    mappingVector = utilities.faceMappingVector;
+    elidx = indexingArray(elementNo,:);
+    idx = [mappingVector(elidx)];
+    idx = [idx; idx + size(utilities.rayCastVars.V0, 1)/2];
+    elementUtilities.V0 = utilities.rayCastVars.V0(idx,:);
+    elementUtilities.u = utilities.rayCastVars.u(idx,:);
+    elementUtilities.v = utilities.rayCastVars.v(idx,:);
+    elementUtilities.n = utilities.rayCastVars.n(idx,:);
+    elementUtilities.uu = utilities.rayCastVars.uu(idx,:);
+    elementUtilities.uv = utilities.rayCastVars.uv(idx,:);
+    elementUtilities.vv = utilities.rayCastVars.vv(idx,:);
+    elementUtilities.D = utilities.rayCastVars.D(idx,:);
+    elementUtilities.infPoint = utilities.rayCastVars.infPoint;
+    elementUtilities.tol = utilities.rayCastVars.tol;
+end
+
+function [bodyUtilities] = getBodyHullUtilities(utilities)
+    %getElementUtilities - Description
+    %
+    % Syntax: [bodyUtilities] = getElementUtilities(elementNo, utilities)
+    mappingVector = utilities.faceMappingVector;
+    hullIdx = utilities.bodyHullIdx;
+    idx = [mappingVector(hullIdx)];
+    idx = [idx; idx + size(utilities.rayCastVars.V0, 1)/2];
+    bodyUtilities.V0 = utilities.rayCastVars.V0(idx,:);
+    bodyUtilities.u = utilities.rayCastVars.u(idx,:);
+    bodyUtilities.v = utilities.rayCastVars.v(idx,:);
+    bodyUtilities.n = utilities.rayCastVars.n(idx,:);
+    bodyUtilities.uu = utilities.rayCastVars.uu(idx,:);
+    bodyUtilities.uv = utilities.rayCastVars.uv(idx,:);
+    bodyUtilities.vv = utilities.rayCastVars.vv(idx,:);
+    bodyUtilities.D = utilities.rayCastVars.D(idx,:);
+    bodyUtilities.infPoint = utilities.rayCastVars.infPoint;
+    bodyUtilities.tol = utilities.rayCastVars.tol;
+end
+
+
+
+function plotFaces(faceArray, colour, alp)
+    %plotFaces - Description
+    %
+    % Syntax: plotFaces(faceArray)
+
+    % triangulatedFaceCoords = [faceArray([1:3], :,:), faceArray([1,3,4], :,:)];
     
+    fig = gcf;
+    hold on
+    patch('XData',faceArray(:, :, 1),'YData',faceArray(:, :, 2),'ZData',faceArray(:, :, 3), 'EdgeColor',colour,'FaceColor','none', 'EdgeAlpha', alp)
+    hold off
 end

@@ -593,7 +593,7 @@ function pushbutton12_Callback(hObject, eventdata, handles)
     %end   
     
     %dimension = handles.popupmenu1.String{handles.popupmenu1.Value};
-    pathSeparator = osPath()
+    pathSeparator = osPath();
     [general] = loadConstants("general",pathSeparator);
     general.local.pathSep = pathSeparator;
     general.constants.dimension = '3D';
@@ -602,9 +602,9 @@ function pushbutton12_Callback(hObject, eventdata, handles)
     general.constants.parallel = handles.checkbox1.Value;
     general.constants.newPDF = handles.checkbox2.Value;
     general.constants.recompute = handles.checkbox3.Value;
-    general.dirs.simulationDir = string(handles.edit1.String) + pathSeparator;
-    general.dirs.seedDir = string(handles.edit2.String);
-    general.dirs.workingDir = string(handles.edit4.String) + pathSeparator;
+    general.local.dirs.simulationDir = string(handles.edit1.String) + pathSeparator;
+    general.local.dirs.seedDir = string(handles.edit2.String);
+    general.local.dirs.workingDir = string(handles.edit4.String) + pathSeparator;
     general.constants.pathDir = string(handles.popupmenu2.String{handles.popupmenu2.Value});
     general.constants.stepSize = handles.edit5.UserData;
     general.constants.pathLength = handles.edit6.UserData;

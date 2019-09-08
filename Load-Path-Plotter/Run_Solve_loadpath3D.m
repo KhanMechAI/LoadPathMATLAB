@@ -16,14 +16,14 @@ tic
     
     %X, Y, Z and Intensity information. Can be amended later if more data is needed to be gathered. This sets the preallocated memory size.
     DATA_DIMENSION = 4;
-    OUTPUT_DIR = general.dirs.workingDir + general.dirs.outPath;
+    OUTPUT_DIR = general.local.dirs.workingDir + general.dirs.outPath;
     mkdir(OUTPUT_DIR);
     thisOutputDir = strjoin([OUTPUT_DIR datestr(now,'yy_mm_dd_HH_MM_SS') ' - ' general.constants.modelName],'')
     mkdir(thisOutputDir);
     matPathFileName = strjoin(['_pathData_' modelDataName '.mat'],'')
     matPathFullFileName = strjoin([thisOutputDir pathSeparator matPathFileName],'');
     % Read's seed data in
-    Seed = importdata(general.dirs.seedDir, ',');
+    Seed = importdata(general.local.dirs.seedDir, ',');
     [nPaths, ~] = size(Seed);
     if nPaths > 0
         xSeed = Seed(:,1);
@@ -52,7 +52,7 @@ tic
     % Detects whether previous data has been computed, if yes, skips
     % recomputation unless forced by user in GUI
 
-    outputPath = strjoin([general.dirs.workingDir, pathSeparator,'Path Data', pathSeparator, 'data_', modelDataName,'.mat'], '');
+    outputPath = strjoin([general.local.dirs.workingDir, pathSeparator,'Path Data', pathSeparator, 'data_', modelDataName,'.mat'], '');
 
     % if ~exist(outputPath, 'file') || general.constants.recompute
 
@@ -77,7 +77,7 @@ tic
 
     %     fprintf('Elements constructed, directories being created and data being saved.\n')
     %     eName = 'Path Data';
-    %     dName = char(general.dirs.workingDir);
+    %     dName = char(general.local.dirs.workingDir);
     %     mkdir(dName,eName);
     %     save(strjoin([dName pathSeparator eName pathSeparator 'data_' modelDataName '.mat'],''),'PartArr','nodes', 'nodePerEl');
     % %% ******************  Define quadrilateral faces of elements **************************
@@ -139,7 +139,7 @@ tic
     %     %This loads data if the preprocessign has already been done.
     %     fprintf('Previous model detected, loading data.\n')
     %     waitbar(CURRENT_TIME/totalTime,waitBar,sprintf('Loading Data'))
-    %     load(strjoin([general.dirs.workingDir pathSeparator 'Path Data' pathSeparator 'data_' modelDataName,'.mat'],''));
+    %     load(strjoin([general.local.dirs.workingDir pathSeparator 'Path Data' pathSeparator 'data_' modelDataName,'.mat'],''));
     %     CURRENT_TIME = CURRENT_TIME + DATA_READ_TIME;
 
     %     fprintf('Data loaded. Starting path computation.\n')
@@ -189,7 +189,7 @@ tic
                     fprintf('Path %k done\n',k);
                 end
                 CURRENT_TIME = CURRENT_TIME +80;
-    	  % ******************   Single thread processing
+    	  % ******************   Single core processing
         case 0
             for k = 1:nPaths
                 %fprintf('Starting path %k\n',k)
@@ -213,37 +213,37 @@ tic
                 iPathMatFile.pathData(1:general.constants.pathLength,:) = [dkx; dky; dkz; dkintense]';
 
                 %Next block only plot peak of pulse
-                if pulse == 1
-                    clear x;
-                    clear y;
-                    clear z;
-                    clear intense;
-                    x = [];
-                    y = [];
-                    z = [];
-                    intense = [];
-                    kdk = 1;
-                    kkdk = 0;
-                    [mdk,ndk] = size(dkintense);
-                    while kdk < ndk;
-                        %Plot path only if magnitude of pointing vector >
-                        %minimum define in input
-                        if dkintense(kdk) > general.constants.plotMiniumVector;
-                            kkdk = kkdk+1;
-                            x(kkdk) = dkx(kdk);
-                            y(kkdk) = dky(kdk);
-                            z(kkdk) = dkz(kdk);
-                            intense(kkdk) = dkintense(kdk);
-                        end
-                        kdk = kdk + 1;
-                    end
-                end
-                if pulse == 0
-                    x = dkx;
-                    y = dky;
-                    z = dkz;
-                    intense = dkintense;
-                end
+%                 if pulse == 1
+%                     clear x;
+%                     clear y;
+%                     clear z;
+%                     clear intense;
+%                     x = [];
+%                     y = [];
+%                     z = [];
+%                     intense = [];
+%                     kdk = 1;
+%                     kkdk = 0;
+%                     [mdk,ndk] = size(dkintense);
+%                     while kdk < ndk;
+%                         %Plot path only if magnitude of pointing vector >
+%                         %minimum define in input
+%                         if dkintense(kdk) > general.constants.plotMiniumVector;
+%                             kkdk = kkdk+1;
+%                             x(kkdk) = dkx(kdk);
+%                             y(kkdk) = dky(kdk);
+%                             z(kkdk) = dkz(kdk);
+%                             intense(kkdk) = dkintense(kdk);
+%                         end
+%                         kdk = kdk + 1;
+%                     end
+%                 end
+%                 if pulse == 0
+%                     x = dkx;
+%                     y = dky;
+%                     z = dkz;
+%                     intense = dkintense;
+%                 end
 
                 
                 CURRENT_TIME = CURRENT_TIME + 1/nPaths *80/2;
@@ -254,41 +254,41 @@ general, xSeed(k), ySeed(k), zSeed(k), reverse_path, waitBar);
                 iPathMatFile.pathData(general.constants.pathLength+1:2*general.constants.pathLength,:) = [dkx; dky; dkz; dkintense]';
                 %Next block added by dk to only plot peak of pulse
 
-                if pulse == 1
-                    clear x;
-                    clear y;
-                    clear z;
-                    clear intense;
-                    x = [];
-                    y = [];
-                    z = [];
-                    intense = [];
-                    kdk = 1;
-                    kkdk = 0;
-                    [mdk,ndk] = size(dkintense);
-                    while kdk < ndk;
-                        %Only plot path if magnitude of pointing
-                        %vector  > 20 and x coordinate is < 200.
-                        %This is to stop path extending past 200 in some
-                        %cases and changing length of plot for movie. 
-                        if dkintense(kdk) > general.constants.plotMiniumVector;
-                            kkdk = kkdk+1;
-                            x(kkdk) = dkx(kdk);
-                            y(kkdk) = dky(kdk);
-                            z(kkdk) = dkz(kdk);
-                            intense(kkdk) = dkintense(kdk);
-                        end
-                        kdk = kdk + 1;
-                    end
-                end
-                if pulse == 0
-                    x = dkx;
-                    y = dky;
-                    z = dkz;
-                    intense = dkintense;
-                    [mdk,ndk] = size(intense);
-                end
-                
+%                 if pulse == 1
+%                     clear x;
+%                     clear y;
+%                     clear z;
+%                     clear intense;
+%                     x = [];
+%                     y = [];
+%                     z = [];
+%                     intense = [];
+%                     kdk = 1;
+%                     kkdk = 0;
+%                     [mdk,ndk] = size(dkintense);
+%                     while kdk < ndk;
+%                         %Only plot path if magnitude of pointing
+%                         %vector  > 20 and x coordinate is < 200.
+%                         %This is to stop path extending past 200 in some
+%                         %cases and changing length of plot for movie. 
+%                         if dkintense(kdk) > general.constants.plotMiniumVector;
+%                             kkdk = kkdk+1;
+%                             x(kkdk) = dkx(kdk);
+%                             y(kkdk) = dky(kdk);
+%                             z(kkdk) = dkz(kdk);
+%                             intense(kkdk) = dkintense(kdk);
+%                         end
+%                         kdk = kdk + 1;
+%                     end
+%                 end
+%                 if pulse == 0
+%                     x = dkx;
+%                     y = dky;
+%                     z = dkz;
+%                     intense = dkintense;
+%                     [mdk,ndk] = size(intense);
+%                 end
+%                 
                 CURRENT_TIME = CURRENT_TIME + 1/nPaths *80/2;
                 fprintf('Path %k done\n',k)
             end
@@ -300,8 +300,8 @@ general, xSeed(k), ySeed(k), zSeed(k), reverse_path, waitBar);
     matPathData = matfile(matPathFullFileName, 'Writable', true);
     nPathMatFile = dir(thisOutputDir + pathSeparator + '*.mat')
     for file = nPathMatFile(2:end)'
-        tmpFileFullPath = thisOutputDir + pathSeparator + file.name
-        iPathData = load(tmpFileFullPath)
+        tmpFileFullPath = thisOutputDir + pathSeparator + file.name;
+        iPathData = load(tmpFileFullPath);
         pathNumber = split(file.name,'.');
         pathNumber = split(pathNumber(1),'_');
         pathNumber = char(pathNumber(end));
@@ -328,17 +328,17 @@ general, xSeed(k), ySeed(k), zSeed(k), reverse_path, waitBar);
     %data sets may have to be condensed. And that its a good backup of the
     %path calculation.
 
-    % save(strjoin([general.dirs.workingDir pathSeparator 'Path Data' pathSeparator 'pathdata_' modelDataName '.mat'],''), 'Paths');
+    % save(strjoin([general.local.dirs.workingDir pathSeparator 'Path Data' pathSeparator 'pathdata_' modelDataName '.mat'],''), 'Paths');
     fig = figure;
     fprintf('Plotting Paths\n')
 
-    modelPlot3D(matPathData, PartArr,nodes,pulse, general.constants.plotMiniumVector, general.constants.plotMaximumVector)
+    modelPlot3D(matPathData, general)
     % Create new directory to store the output plots
     eName = 'Path Plots';
-    dName = char(general.dirs.workingDir);
+    dName = char(general.local.dirs.workingDir);
     mkdir(dName,eName);
     %********************Name of 'bmp' file hard-wired ************************
-    saveas(fig,strjoin([general.dirs.workingDir pathSeparator 'Path Plots' pathSeparator general.constants.modelName, '.bmp'],''))
+    saveas(fig,strjoin([general.local.dirs.workingDir pathSeparator 'Path Plots' pathSeparator general.constants.modelName, '.bmp'],''))
     %******************** Waitbar and Status Update ***************************
     if getappdata(waitBar,'canceling')
         delete(waitBar)
@@ -353,7 +353,7 @@ general, xSeed(k), ySeed(k), zSeed(k), reverse_path, waitBar);
     else
         dt = '';
     end
-    dateAppenedFN = strjoin([general.dirs.workingDir, pathSeparator, 'Path Plots', pathSeparator ,general.constants.modelName,'_', dt, '.pdf'],'');
+    dateAppenedFN = strjoin([general.local.dirs.workingDir, pathSeparator, 'Path Plots', pathSeparator ,general.constants.modelName,'_', dt, '.pdf'],'');
 
     gcf;
 %     print(fig,dateAppenedFN, '-dpdf','-r1000', '-fillpage');
@@ -370,12 +370,28 @@ general, xSeed(k), ySeed(k), zSeed(k), reverse_path, waitBar);
     %%********************************End of Computation******************************
     toc
 end
-function [] = modelPlot3D(pathDataMatObject,PartArr,...
-                nodes,pulse, plotMiniumVector, plotMaximumVector)
+function plotBodies(utilities, colour, alpha)
+    gcf;
+    a = gca;
+    a.DataAspectRatio = [1 1 1];
+    a.XLabel.String = 'X';
+    a.YLabel.String = 'Y';
+    a.ZLabel.String = 'Z';
+    hold on
+    for k = 1:length(utilities.locatingData)
+        bodyHullIdx = utilities.locatingData{k}.bodyHullIdx;
+        bodyFaceCoords = utilities.locatingData{k}.faceCoords(:,bodyHullIdx,:);
+        patch('XData',bodyFaceCoords(:, :, 1),'YData',bodyFaceCoords(:, :, 2),'ZData',bodyFaceCoords(:, :, 3), 'EdgeColor',colour,'FaceColor','none', 'EdgeAlpha', alpha);
+    end
+    hold off
+end
+
+function [] = modelPlot3D(pathDataMatObject, general)
     %Just some custom settings for plotting the paths
     ALPHA = 0.1;
     BUFFER = 0.35;
-    RunPlot_wireFrame(PartArr,ALPHA, BUFFER,nodes);
+    utilities = getData(general, "u");
+    plotBodies(utilities, 'black', 0.2)
     numPaths = size(pathDataMatObject.pathData(1,:,1));
     numPaths = numPaths(2);
     nPathLength = size(pathDataMatObject.pathData(:,1,1));
@@ -394,23 +410,23 @@ function [] = modelPlot3D(pathDataMatObject,PartArr,...
             fprintf('Path %k unsuccessful', k)
             continue
         end
-        iPath = iPath(:,~nanColumns)
-        iPathLength = length(iPath(1,:))
+        iPath = iPath(:,~nanColumns);
+        iPathLength = length(iPath(1,:));
         cd = colormap('parula');
         %%*********************************If transient solution hardwire maximum ***********
         %%*********************************Should be same for all plots in sequence *********
         %%*********************************Not just current plot. ***************************
         %%*********************************pulse = 1 if plot is transient *************
-        if pulse == 1
+        if general.constants.pulse == 1
 		    cd = colormap(flipud(hot));
             cdd = [];
             cd = [];
             cdd = flipud(hot(64));
             vmax = max(iPath(:,4));
-            if vmax > plotMaximumVector
-                   vmax = plotMaximumVector;
+            if vmax > general.constants.plotMaximumVector
+                   vmax = general.constants.plotMaximumVector;
             end
-            ncol = 64 * vmax/plotMaximumVector;
+            ncol = 64 * vmax/general.constants.plotMaximumVector;
             for k = 1:ncol
                 for j = 1:3
                     cd(k,j) = cdd(k,j);
